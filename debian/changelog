@@ -1,0 +1,8 @@
+libaccounts-svc (0.0.73) unstable; urgency=low
+
+  * Release
+  * Git: pkgs/l/libaccounts-svc
+  * Tag: libaccounts-svc_0.0.73
+
+ -- Wonyoung Lee <wy1115.lee@samsung.com>  Fri, 27 Apr 2012 08:52:17 +0900
+
