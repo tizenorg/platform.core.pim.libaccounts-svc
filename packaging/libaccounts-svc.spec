@@ -15,6 +15,10 @@ BuildRequires:  pkgconfig(db-util)
 BuildRequires:  pkgconfig(capi-base-common)
 Requires(post): /sbin/ldconfig
 Requires(post): /usr/bin/sqlite3
+Requires(post): /bin/mkdir
+Requires(post): /bin/chown
+Requires(post): /bin/chmod
+Requires(post): /bin/rm
 Requires(postun): /sbin/ldconfig
 
 %description

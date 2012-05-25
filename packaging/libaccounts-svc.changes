@@ -1,0 +1,4 @@
+* Fri June 08 2012 Yan Yin <yan.yin@intel.com> - 0.0.73
+- add Requires(post) entries
+- tigger submission to OBS
+
