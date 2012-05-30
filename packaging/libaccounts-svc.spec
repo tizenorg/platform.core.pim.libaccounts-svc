@@ -6,6 +6,7 @@ Release:    1
 Group:      TO_BE/FILLED_IN
 License:    TO BE FILLED IN
 Source0:    libaccounts-svc-%{version}.tar.gz
+Source1001: packaging/libaccounts-svc.manifest 
 
 BuildRequires:  cmake
 BuildRequires:  pkgconfig(glib-2.0)
@@ -33,6 +34,7 @@ Development files for %{name}
 
 
 %build
+cp %{SOURCE1001} .
 cmake . -DCMAKE_INSTALL_PREFIX=/usr
 
 make %{?jobs:-j%jobs}
@@ -80,10 +82,12 @@ chmod 660 /opt/dbspace/.account-svc.db-journal
 
 
 %files
+%manifest libaccounts-svc.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so.*
 
 %files devel
+%manifest libaccounts-svc.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so
 %{_libdir}/pkgconfig/accounts-svc.pc
