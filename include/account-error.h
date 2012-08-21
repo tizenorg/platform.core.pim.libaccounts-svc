@@ -1,9 +1,9 @@
 /*
- * libaccounts-svc
+ *  account
  *
- * Copyright (c) 2010 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2000 - 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Tarun Kumar <tarun.kr@samsung.com>, Sukumar Moharana <msukumar@samsung.com>, Wonyoung Lee <wy1115.lee@samsung.com>
+ * Contact: Wonyoung Lee <wy1115.lee@samsung.com>, Tarun Kumar <tarun.kr@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,6 +59,7 @@ typedef enum
 	ACCOUNT_ERROR_DB_NOT_OPENED = TIZEN_ERROR_SOCIAL_CLASS | 0x05,
 	ACCOUNT_ERROR_QUERY_SYNTAX_ERROR = TIZEN_ERROR_SOCIAL_CLASS | 0x06,
 	ACCOUNT_ERROR_ITERATOR_END = TIZEN_ERROR_SOCIAL_CLASS | 0x07,
+	ACCOUNT_ERROR_NOTI_FAILED = TIZEN_ERROR_SOCIAL_CLASS | 0x08,
 
 } account_error_e;
 

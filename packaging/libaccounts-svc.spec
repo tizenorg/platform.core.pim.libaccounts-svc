@@ -1,7 +1,7 @@
 
 Name:       libaccounts-svc
 Summary:    Account DB library
-Version:    0.0.73
+Version:    0.0.87
 Release:    1
 Group:      TO_BE/FILLED_IN
 License:    TO BE FILLED IN
@@ -12,6 +12,7 @@ BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(dlog)
 BuildRequires:  pkgconfig(db-util)
 BuildRequires:  pkgconfig(capi-base-common)
+BuildRequires:  pkgconfig(dbus-1)
 Requires(post): /sbin/ldconfig
 Requires(post): /usr/bin/sqlite3
 Requires(postun): /sbin/ldconfig
@@ -50,29 +51,26 @@ if [ ! -d /opt/dbspace ]
 then
         mkdir -p /opt/dbspace
 fi
-if [ ! -f /opt/dbspace/.account-svc.db ]
-rm -rf /opt/dbspace/.account-svc.db*
+if [ ! -f /opt/dbspace/.account.db ]
+rm -rf /opt/dbspace/.account.db*
 then
-        sqlite3 /opt/dbspace/.account-svc.db 'PRAGMA journal_mode = PERSIST;
-        CREATE TABLE if not exists accounts (_id INTEGER PRIMARY KEY AUTOINCREMENT, email_address TEXT, user_name TEXT, display_name TEXT, icon_path TEXT,
-        service_type INTEGER, source TEXT, library_name TEXT, is_default INTEGER, domain_name TEXT,
-        key TEXT, secret TEXT, save_screen_name INTEGER, save_token INTEGER, save_user_name INTEGER,
-        save_password INTEGER, key_values TEXT, capability TEXT,
-        int_custom0 INTEGER, int_custom1 INTEGER, int_custom2 INTEGER, int_custom3 INTEGER, int_custom4 INTEGER,
-        txt_custom0 TEXT, txt_custom1 TEXT, txt_custom2 TEXT, txt_custom3 TEXT, txt_custom4 TEXT);
-        CREATE TABLE if not exists capabilities (_id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, value TEXT, app_id INTEGER, account_id INTEGER, FOREIGN KEY (account_id) REFERENCES accounts(_id));
-        CREATE TABLE if not exists service (_service_id INTEGER PRIMARY KEY AUTOINCREMENT, service_name TEXT, library_name TEXT, version TEXT, type TEXT, icon_path TEXT, auth_type TEXT);
-        INSERT INTO service ( _service_id, service_name, library_name, version, type) values (1, "Samsung", "samsung-sso-efl", "0.0.1", "ui-gadget");
-        INSERT INTO service ( _service_id, service_name, library_name, version, type) values (3, "Google", "email-setting-efl", "0.0.1", "ui-gadget");
-        INSERT INTO service ( _service_id, service_name, library_name, version, type) values (4, "MSN", "email-setting-efl", "0.0.1", "ui-gadget");
-        CREATE TABLE if not exists feature (_feature_id INTEGER PRIMARY KEY AUTOINCREMENT, feature_name TEXT, description TEXT, service_id INTEGER, FOREIGN KEY (service_id) REFERENCES service(_service_id));'
+        sqlite3 /opt/dbspace/.account.db 'PRAGMA journal_mode = PERSIST;
+        CREATE TABLE if not exists account (_id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, email_address TEXT, display_name TEXT, icon_path TEXT,
+        source TEXT, package_name TEXT, access_token TEXT, domain_name TEXT, auth_type INTEGER, secret INTEGER, sync_support INTEGER,
+	txt_custom0 TEXT, txt_custom1 TEXT, txt_custom2 TEXT, txt_custom3 TEXT, txt_custom4 TEXT, 
+        int_custom0 INTEGER, int_custom1 INTEGER, int_custom2 INTEGER, int_custom3 INTEGER, int_custom4 INTEGER);
+        CREATE TABLE if not exists capabilitiy (_id INTEGER PRIMARY KEY AUTOINCREMENT, key INTEGER, value INTEGER, 
+	package_name TEXT, user_name TEXT,  account_id INTEGER, FOREIGN KEY (account_id) REFERENCES account(_id));'
 fi
 
-chown 5000:5000 /opt/dbspace/.account-svc.db
-chown 5000:5000 /opt/dbspace/.account-svc.db-journal
+chown 5000:5000 /opt/dbspace/.account.db
+chown 5000:5000 /opt/dbspace/.account.db-journal
 
-chmod 660 /opt/dbspace/.account-svc.db
-chmod 660 /opt/dbspace/.account-svc.db-journal
+chmod 660 /opt/dbspace/.account.db
+chmod 660 /opt/dbspace/.account.db-journal
+
+#chsmack -a 'libaccounts-svc' /opt/dbspace/.account.db
+#chsmack -a 'libaccounts-svc' /opt/dbspace/.account.db-journal
 
 %postun -p /sbin/ldconfig
 
@@ -80,6 +78,7 @@ chmod 660 /opt/dbspace/.account-svc.db-journal
 
 
 %files
+%manifest libaccounts-svc.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so.*
 

@@ -1,9 +1,9 @@
 /*
- * libaccounts-svc
+ *  account
  *
- * Copyright (c) 2010 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2000 - 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Tarun Kumar <tarun.kr@samsung.com>, Sukumar Moharana <msukumar@samsung.com>, Wonyoung Lee <wy1115.lee@samsung.com>
+ * Contact: Wonyoung Lee <wy1115.lee@samsung.com>, Tarun Kumar <tarun.kr@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,7 +64,8 @@ typedef struct _account_s
 	char*		domain_name;		/*< domain name [Ex: google, facebook, twitter, samsung, ...] */
 	/*int			service_type;*/ /* ACCOUNT_CATEGORY*/
 	int			auth_type;
-	int 		secret;
+	int 			secret;
+	int 			sync_support;
 	int			user_data_int[USER_INT_CNT];
 	char*		user_data_txt[USER_TXT_CNT];
 	GSList*		capablity_list;
@@ -98,6 +99,7 @@ typedef enum {
 	ACCOUNT_FIELD_DOMAIN_NAME,
 	ACCOUNT_FIELD_AUTH_TYPE,
 	ACCOUNT_FIELD_SECRET,
+	ACCOUNT_FIELD_SYNC_SUPPORT,
 	ACCOUNT_FIELD_USER_TEXT_0,
 	ACCOUNT_FIELD_USER_TEXT_1,
 	ACCOUNT_FIELD_USER_TEXT_2,
@@ -126,7 +128,6 @@ typedef enum {
 	CAPABILITY_FIELD_END,
 }CAPABILITY_DB_IDX;
 
-
 typedef sqlite3_stmt* account_stmt;
 
 #define ACCOUNT_SCHEMA	"create table %s \n"\
@@ -142,6 +143,7 @@ typedef sqlite3_stmt* account_stmt;
 "domain_name TEXT, "\
 "auth_type INTEGER, "\
 "secret INTEGER, "\
+"sync_support INTEGER, "\
 "txt_custom0 TEXT, "\
 "txt_custom1 TEXT, "\
 "txt_custom2 TEXT, "\

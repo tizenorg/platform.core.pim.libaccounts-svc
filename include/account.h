@@ -1,9 +1,9 @@
 /*
- * libaccounts-svc
+ *  account
  *
- * Copyright (c) 2010 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2000 - 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Tarun Kumar <tarun.kr@samsung.com>, Sukumar Moharana <msukumar@samsung.com>, Wonyoung Lee <wy1115.lee@samsung.com>
+ * Contact: Wonyoung Lee <wy1115.lee@samsung.com>, Tarun Kumar <tarun.kr@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -673,6 +673,35 @@ int account_get_secret(account_h account, account_secrecy_state_e *secret);
  * @see account_get_secret()
  */
 int account_set_secret(account_h account, const account_secrecy_state_e secret);
+
+/**
+ * @brief	Gets the sync support.
+ *
+ * @param[in]	account The account handle
+ * @param[out]	sync_support The sync support
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ *
+ * @see account_set_sync_support()
+ */
+int account_get_sync_support(account_h account, account_sync_state_e *sync_support);
+
+
+/**
+ * @brief	Sets the sync support.
+ *
+ * @param[in]	account The account handle
+ * @param[in]	sync_support sync state to be set
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ *
+ * @see account_get_sync_support()
+ */
+int account_set_sync_support(account_h account, const account_sync_state_e sync_support);
 
 
 /**

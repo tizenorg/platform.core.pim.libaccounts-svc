@@ -1,9 +1,9 @@
 /*
- * libaccounts-svc
+ *  account
  *
- * Copyright (c) 2010 - 2012 Samsung Electronics Co., Ltd. All rights reserved.
+ * Copyright (c) 2000 - 2011 Samsung Electronics Co., Ltd. All rights reserved.
  *
- * Contact: Tarun Kumar <tarun.kr@samsung.com>, Sukumar Moharana <msukumar@samsung.com>, Wonyoung Lee <wy1115.lee@samsung.com>
+ * Contact: Wonyoung Lee <wy1115.lee@samsung.com>, Tarun Kumar <tarun.kr@samsung.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include <assert.h>
 #include <account-private.h>
 #include <dlog.h>
+#include <dbus/dbus.h>
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -89,6 +90,55 @@ static const char *_account_db_err_msg()
 {
 	assert(NULL != g_hAccountDB);
 	return sqlite3_errmsg(g_hAccountDB);
+}
+
+static void _account_insert_delete_update_dbus_notification_send(char *noti_name)
+{
+	DBusMessage* msg;
+	DBusConnection* conn;
+	DBusError err;
+	dbus_uint32_t serial = 0;
+
+	if (!noti_name) {
+		ACCOUNT_DEBUG("Noti Name is NULL!!!!!!\n");
+		return;
+	}
+
+	ACCOUNT_DEBUG("Sending signal with value %s\n", noti_name);
+
+	/* initialise the error value*/
+	dbus_error_init(&err);
+
+	/* connect to the DBUS system bus, and check for errors*/
+	conn = dbus_bus_get(DBUS_BUS_SYSTEM, &err);
+	if (dbus_error_is_set(&err)) {
+		ACCOUNT_DEBUG("Connection Error (%s)\n", err.message);
+		dbus_error_free(&err);
+	}
+	if (NULL == conn) {
+		ACCOUNT_DEBUG("Dbus connection is NULL \n");
+		return;
+	}
+	/* create a signal & check for errors */
+	msg = dbus_message_new_signal("/account/signal/Object", /*object name of the signal*/
+					ACCOUNT_DBUS_SIGNAL_INTERFACE, /*interface name of the signal*/
+					noti_name); /* name of the signal*/
+	if (NULL == msg) {
+		ACCOUNT_DEBUG("Message Null\n");
+		return;
+	}
+
+	/* send the message and flush the connection*/
+	if (!dbus_connection_send(conn, msg, &serial)) {
+		ACCOUNT_DEBUG("Out Of Memory!\n");
+		return;
+	}
+	dbus_connection_flush(conn);
+	ACCOUNT_DEBUG("Signal Sent\n");
+
+	/* free the message*/
+	if (msg)
+		dbus_message_unref(msg);
 }
 
 static int _account_get_record_count(char* query)
@@ -501,13 +551,16 @@ static int _account_convert_account_to_sql(account_s *account, account_stmt hstm
 	/* 10. secret */
 	_account_query_bind_int(hstmt, count++, account->secret);
 
+	/* 11. sync_support */
+	_account_query_bind_int(hstmt, count++, account->sync_support);
+
 	int i;
 
-	/* 11. user text*/
+	/* 12. user text*/
 	for(i=0; i< USER_TXT_CNT; i++)
 		_account_query_bind_text(hstmt, count++, (char*)account->user_data_txt[i]);
 
-	/* 12. user integer	*/
+	/* 13. user integer	*/
 	for(i=0; i< USER_INT_CNT; i++)
 		_account_query_bind_int(hstmt, count++, account->user_data_int[i]);
 
@@ -554,9 +607,9 @@ static int _account_execute_insert_query(account_s *account)
 
 	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
 	ACCOUNT_SNPRINTF(query, sizeof(query), "INSERT INTO %s( user_name, email_address , display_name , icon_path , source , package_name , "
-			"access_token , domain_name , auth_type , secret , txt_custom0, txt_custom1, txt_custom2, txt_custom3, txt_custom4, "
+			"access_token , domain_name , auth_type , secret , sync_support , txt_custom0, txt_custom1, txt_custom2, txt_custom3, txt_custom4, "
 			"int_custom0, int_custom1, int_custom2, int_custom3, int_custom4, txt_custom0 ) values "
-			"(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?)",	ACCOUNT_TABLE);
+			"(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? , ?, ?)",	ACCOUNT_TABLE);
 
 	hstmt = _account_prepare_query(query);
 	ACCOUNT_RETURN_VAL((hstmt != NULL), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_prepare_query() failed(%s).\n", _account_db_err_msg()));
@@ -859,6 +912,8 @@ static void _account_convert_column_to_account(account_stmt hstmt, account_s *ac
 
 	account_record->secret = _account_query_table_column_int(hstmt, ACCOUNT_FIELD_SECRET);
 
+	account_record->sync_support = _account_query_table_column_int(hstmt, ACCOUNT_FIELD_SYNC_SUPPORT);
+
 	textbuf = _account_query_table_column_text(hstmt, ACCOUNT_FIELD_USER_TEXT_0);
 	_account_db_data_to_text(textbuf, &(account_record->user_data_txt[0]));
 
@@ -943,8 +998,8 @@ static int _account_update_account_by_user_name(account_s *account, char *user_n
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
 
-	ACCOUNT_RETURN_VAL((account->user_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("user_name is NULL.\n"));
-	ACCOUNT_RETURN_VAL((account->email_address != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("email_address is NULL.\n"));
+	ACCOUNT_RETURN_VAL((user_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("user_name is NULL.\n"));
+	ACCOUNT_RETURN_VAL((package_name!= NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("package_name is NULL.\n"));
 
 	if (!account->user_name && !account->display_name && !account->email_address) {
 		ACCOUNT_DEBUG("One field should be set among user name, display name, email address\n");
@@ -953,7 +1008,7 @@ static int _account_update_account_by_user_name(account_s *account, char *user_n
 
 	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
 	ACCOUNT_SNPRINTF(query, sizeof(query), "UPDATE %s SET user_name=?, email_address =?, display_name =?, "
-			"icon_path =?, source =?, package_name =? , access_token =?, domain_name =?, auth_type =?, secret =?,"
+			"icon_path =?, source =?, package_name =? , access_token =?, domain_name =?, auth_type =?, secret =?, sync_support =?,"
 			"txt_custom0=?, txt_custom1=?, txt_custom2=?, txt_custom3=?, txt_custom4=?, "
 			"int_custom0=?, int_custom1=?, int_custom2=?, int_custom3=?, int_custom4=? WHERE user_name=? and package_name=? ", ACCOUNT_TABLE);
 
@@ -975,7 +1030,7 @@ static int _account_update_account_by_user_name(account_s *account, char *user_n
 	hstmt = NULL;
 
 	/*update capability*/
-	_account_update_capability_by_user_name(account, user_name, package_name);
+	error_code = _account_update_capability_by_user_name(account, user_name, package_name);
 
 	return error_code;
 }
@@ -990,6 +1045,7 @@ int account_insert_to_db(account_h account, int *account_id)
 	}
 
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
+	ACCOUNT_RETURN_VAL((account_id != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT ID POINTER IS NULL"));
 
 	account_s *data = (account_s*)account;
 
@@ -1011,6 +1067,7 @@ int account_insert_to_db(account_h account, int *account_id)
 	_account_insert_capability(data, *account_id);
 
 	pthread_mutex_unlock(&account_mutex);
+	_account_insert_delete_update_dbus_notification_send(ACCOUNT_DBUS_NOTI_NAME_INSERT);
 
 	return ACCOUNT_ERROR_NONE;
 
@@ -1025,11 +1082,19 @@ int account_create(account_h *account)
 
 	account_s *data = (account_s*)malloc(sizeof(account_s));
 
-	if (data == NULL)
+	if (data == NULL) {
+		ACCOUNT_DEBUG("Memory Allocation Failed");
 		return ACCOUNT_ERROR_OUT_OF_MEMORY;
+	}
 	ACCOUNT_MEMSET(data, 0, sizeof(account_s));
 
 	ACCOUNT_DEBUG("create handle=%p\n", *account);
+
+	/*Setting account as visible by default*/
+	data->secret = ACCOUNT_SECRECY_VISIBLE;
+
+	/*Setting account as not supporting sync by default*/
+	data->sync_support = ACCOUNT_NOT_SUPPORTS_SYNC;
 
 	*account = (account_h)data;
 
@@ -1227,7 +1292,7 @@ int account_set_user_text(account_h account, int index, const char *user_txt)
 		ACCOUNT_DEBUG("(%s)-(%d) user_txt is NULL.\n", __FUNCTION__, __LINE__);
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
-	if (index >= USER_TXT_CNT) {
+	if (index >= USER_TXT_CNT || index < 0) {
 		ACCOUNT_DEBUG("(%s)-(%d) index rage should be between 0-4.\n", __FUNCTION__, __LINE__);
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
@@ -1274,6 +1339,22 @@ int account_set_secret(account_h account, const account_secrecy_state_e secret)
 	return ACCOUNT_ERROR_NONE;
 }
 
+int account_set_sync_support(account_h account, const account_sync_state_e sync_support)
+{
+	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("(%s)-(%d) account handle is NULL.\n",	__FUNCTION__, __LINE__));
+
+	if ( (sync_support < 0) || (sync_support > ACCOUNT_SUPPORTS_SYNC)) {
+		ACCOUNT_DEBUG("(%s)-(%d) sync_support is less than 1 or more than enum max.\n", __FUNCTION__, __LINE__);
+		return ACCOUNT_ERROR_INVALID_PARAMETER;
+	}
+
+	account_s *data = (account_s*)account;
+
+	data->sync_support= (int)sync_support;
+
+	return ACCOUNT_ERROR_NONE;
+}
+
 int account_set_user_int(account_h account, int index, const int user_int)
 {
 	if (!account) {
@@ -1281,7 +1362,7 @@ int account_set_user_int(account_h account, int index, const int user_int)
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
 
-	if (index >= USER_INT_CNT) {
+	if (index >= USER_INT_CNT ||index < 0) {
 		ACCOUNT_DEBUG("(%s)-(%d) index rage should be between 0-4.\n", __FUNCTION__, __LINE__);
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
@@ -1551,6 +1632,24 @@ int account_get_secret(account_h account, account_secrecy_state_e *secret)
 	return ACCOUNT_ERROR_NONE;
 }
 
+int account_get_sync_support(account_h account, account_sync_state_e *sync_support)
+{
+	if (!account) {
+		ACCOUNT_DEBUG("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
+		return ACCOUNT_ERROR_INVALID_PARAMETER;
+	}
+	if (!sync_support) {
+		ACCOUNT_DEBUG("(%s)-(%d) sync_support is NULL.\n", __FUNCTION__, __LINE__);
+		return ACCOUNT_ERROR_INVALID_PARAMETER;
+	}
+
+	account_s* data = (account_s*)account;
+
+	*sync_support = data->sync_support;
+
+	return ACCOUNT_ERROR_NONE;
+}
+
 int account_get_account_id(account_h account, int *account_id)
 {
 	if (!account) {
@@ -1619,6 +1718,7 @@ int account_query_capability_by_account_id(capability_cb cb_func, int account_id
 	int 			rc = 0;
 
 	ACCOUNT_RETURN_VAL((account_id > 0), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT INDEX IS LESS THAN 0"));
+	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO CALLBACK FUNCTION"));
 
 	int ret = ACCOUNT_ERROR_NONE;
 
@@ -1678,9 +1778,6 @@ static int _account_update_account(account_s *account, int account_id)
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
 
-	ACCOUNT_RETURN_VAL((account->user_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("user_name is NULL.\n"));
-	ACCOUNT_RETURN_VAL((account->email_address != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("email_address is NULL.\n"));
-
 	if (!account->user_name && !account->display_name && !account->email_address) {
 		ACCOUNT_DEBUG("One field should be set among user name, display name, email address\n");
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
@@ -1688,7 +1785,7 @@ static int _account_update_account(account_s *account, int account_id)
 
 	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
 	ACCOUNT_SNPRINTF(query, sizeof(query), "UPDATE %s SET user_name=?, email_address =?, display_name =?, "
-			"icon_path =?, source =?, package_name =? , access_token =?, domain_name =?, auth_type =?, secret =?,"
+			"icon_path =?, source =?, package_name =? , access_token =?, domain_name =?, auth_type =?, secret =?, sync_support =?,"
 			"txt_custom0=?, txt_custom1=?, txt_custom2=?, txt_custom3=?, txt_custom4=?, "
 			"int_custom0=?, int_custom1=?, int_custom2=?, int_custom3=?, int_custom4=? WHERE _id=? ", ACCOUNT_TABLE);
 
@@ -1708,7 +1805,7 @@ static int _account_update_account(account_s *account, int account_id)
 	hstmt = NULL;
 
 	/*update capability*/
-	_account_update_capability(account, account_id);
+	error_code = _account_update_capability(account, account_id);
 
 	return error_code;
 }
@@ -1731,6 +1828,7 @@ int account_update_to_db_by_id(const account_h account, int account_id)
 	error_code = _account_update_account(data, account_id);
 
 	pthread_mutex_unlock(&account_mutex);
+	_account_insert_delete_update_dbus_notification_send(ACCOUNT_DBUS_NOTI_NAME_UPDATE);
 
 	return ACCOUNT_ERROR_NONE;
 }
@@ -1754,6 +1852,7 @@ int account_update_to_db_by_user_name(account_h account, const char *user_name, 
 	error_code = _account_update_account_by_user_name(data, (char*)user_name, (char*)package_name);
 
 	pthread_mutex_unlock(&account_mutex);
+	_account_insert_delete_update_dbus_notification_send(ACCOUNT_DBUS_NOTI_NAME_UPDATE);
 
 	return ACCOUNT_ERROR_NONE;
 }
@@ -1842,6 +1941,7 @@ int account_query_account_by_account_id(int account_db_id, account_h *account)
 	int				rc = 0;
 
 	ACCOUNT_RETURN_VAL((account_db_id > 0), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT INDEX IS LESS THAN 0"));
+	ACCOUNT_RETURN_VAL((*account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT IS NULL"));
 
 	int ret = ACCOUNT_ERROR_NONE;
 
@@ -1889,6 +1989,7 @@ int account_query_account_by_user_name(account_cb cb_func, const char *user_name
 	int				rc = 0;
 
 	ACCOUNT_RETURN_VAL((user_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("USER NAME IS NULL"));
+	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("CALL BACK IS NULL"));
 
 
 	int ret = ACCOUNT_ERROR_NONE;
@@ -1971,6 +2072,7 @@ int account_query_account_by_user_name(account_cb cb_func, const char *user_name
 		ACCOUNT_DEBUG("domain_name = %s", testaccount->domain_name);
 		ACCOUNT_DEBUG("auth_type = %d", testaccount->auth_type);
 		ACCOUNT_DEBUG("secret = %d", testaccount->secret);
+		ACCOUNT_DEBUG("sync_support = %d", testaccount->sync_support);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[0]);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[1]);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[2]);
@@ -2111,6 +2213,7 @@ int account_query_account_by_capability(account_cb cb_func, account_capability_t
 		ACCOUNT_DEBUG("domain_name = %s", testaccount->domain_name);
 		ACCOUNT_DEBUG("auth_type = %d", testaccount->auth_type);
 		ACCOUNT_DEBUG("secret = %d", testaccount->secret);
+		ACCOUNT_DEBUG("sync_support = %d", testaccount->sync_support);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[0]);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[1]);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[2]);
@@ -2243,6 +2346,7 @@ int account_query_account_by_package_name(account_cb cb_func, const char* packag
 		ACCOUNT_DEBUG("domain_name = %s", testaccount->domain_name);
 		ACCOUNT_DEBUG("auth_type = %d", testaccount->auth_type);
 		ACCOUNT_DEBUG("secret = %d", testaccount->secret);
+		ACCOUNT_DEBUG("sync_support = %d", testaccount->sync_support);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[0]);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[1]);
 		ACCOUNT_DEBUG("user text = %s", testaccount->user_data_txt[2]);
@@ -2342,6 +2446,9 @@ CATCH:
 
 	if (ret_transaction != ACCOUNT_ERROR_NONE) {
 		ACCOUNT_DEBUG("account_svc_delete:_account_svc_end_transaction fail %d, is_success=%d\n", ret_transaction, is_success);
+	} else {
+		if (is_success == true)
+			_account_insert_delete_update_dbus_notification_send(ACCOUNT_DBUS_NOTI_NAME_DELETE);
 	}
 
 	pthread_mutex_unlock(&account_mutex);
@@ -2429,6 +2536,9 @@ CATCH:
 
 	if (ret_transaction != ACCOUNT_ERROR_NONE) {
 		ACCOUNT_DEBUG("account_svc_delete:_account_svc_end_transaction fail %d, is_success=%d\n", ret_transaction, is_success);
+	} else {
+		if (is_success == true)
+			_account_insert_delete_update_dbus_notification_send(ACCOUNT_DBUS_NOTI_NAME_DELETE);
 	}
 
 	pthread_mutex_unlock(&account_mutex);
@@ -2505,6 +2615,9 @@ CATCH:
 
 	if (ret_transaction != ACCOUNT_ERROR_NONE) {
 		ACCOUNT_DEBUG("account_svc_delete:_account_svc_end_transaction fail %d, is_success=%d\n", ret_transaction, is_success);
+	} else {
+		if (is_success == true)
+			_account_insert_delete_update_dbus_notification_send(ACCOUNT_DBUS_NOTI_NAME_DELETE);
 	}
 
 	pthread_mutex_unlock(&account_mutex);

@@ -6,16 +6,21 @@ SET(EXEC_PREFIX "\${prefix}")
 SET(LIBDIR "\${prefix}/lib")
 SET(INCLUDEDIR "\${prefix}/include ")
 SET(VERSION_MAJOR 0)
-SET(VERSION "${VERSION_MAJOR}.0.73")
+SET(VERSION "${VERSION_MAJOR}.0.87")
 
 SET(SRCS
 src/account.c
 )
 
+SET(TESTSRC
+src/account.c
+src/utc-account.c
+)
+
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include)
 
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common)
+pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common dbus-1)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
@@ -32,7 +37,10 @@ ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRCS})
 SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES SOVERSION ${VERSION_MAJOR})
 SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES VERSION ${VERSION})
 
+ADD_EXECUTABLE("acctest" ${TESTSRC})
+
 TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${pkgs_LDFLAGS})
+TARGET_LINK_LIBRARIES("acctest" ${pkgs_LDFLAGS})
 
 CONFIGURE_FILE(${PROJECT_NAME}.pc.in ${PROJECT_NAME}.pc @ONLY)
 
@@ -44,3 +52,4 @@ INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/account.h DESTINATION include)
 INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/account-error.h DESTINATION include)
 INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/account-types.h DESTINATION include)
 
+#ADD_SUBDIRECTORY(test)

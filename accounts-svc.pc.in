@@ -8,6 +8,6 @@ includedir=@INCLUDEDIR@
 Name: accounts-svc
 Description: Account DB library
 Version: @VERSION@
-Requires: sqlite3 dlog db-util glib-2.0 capi-base-common
+Requires: sqlite3 dlog db-util glib-2.0 capi-base-common dbus-1
 Libs: -L${libdir} -laccounts-svc
 Cflags: -I${includedir}
