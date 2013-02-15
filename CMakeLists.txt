@@ -1,0 +1,69 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
+PROJECT(accounts-svc C)
+
+SET(PREFIX ${CMAKE_INSTALL_PREFIX})
+SET(EXEC_PREFIX "\${prefix}")
+SET(LIBDIR "\${prefix}/lib")
+SET(INCLUDEDIR "\${prefix}/include ")
+SET(VERSION_MAJOR 0)
+SET(VERSION "${VERSION_MAJOR}.2.21")
+
+SET(SRCS
+src/account.c
+src/account-capability-parser.c
+)
+
+SET(TESTSRC
+src/account.c
+src/account-capability-parser.c
+src/utc-account.c
+)
+
+SET(XML_PARSE_TEST_SRC
+src/account.c
+src/account-capability-parser.c
+src/account-xml-verify.c
+)
+
+INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include)
+
+INCLUDE(FindPkgConfig)
+pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common vconf capi-appfw-application libxml-2.0)
+
+FOREACH(flag ${pkgs_CFLAGS})
+	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
+ENDFOREACH(flag)
+
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Wall -Werror")
+SET(CMAKE_LDFLAGS "-Wl,-zdefs")
+
+ADD_DEFINITIONS("-DPREFIX=\"${CMAKE_INSTALL_PREFIX}\"")
+ADD_DEFINITIONS("-DFACTORYFS=\"$ENV{FACTORYFS}\"")
+ADD_DEFINITIONS("-DSLP_DEBUG")
+
+ADD_LIBRARY(${PROJECT_NAME} SHARED ${SRCS})
+SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES SOVERSION ${VERSION_MAJOR})
+SET_TARGET_PROPERTIES(${PROJECT_NAME} PROPERTIES VERSION ${VERSION})
+
+ADD_EXECUTABLE("acctest" ${TESTSRC})
+
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${pkgs_LDFLAGS})
+TARGET_LINK_LIBRARIES("acctest" ${pkgs_LDFLAGS})
+
+ADD_EXECUTABLE("account-xml-verify" ${XML_PARSE_TEST_SRC})
+TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${pkgs_LDFLAGS})
+TARGET_LINK_LIBRARIES("account-xml-verify" ${pkgs_LDFLAGS})
+
+CONFIGURE_FILE(${PROJECT_NAME}.pc.in ${PROJECT_NAME}.pc @ONLY)
+
+INSTALL(TARGETS ${PROJECT_NAME} DESTINATION lib/accounts-svc)
+INSTALL(TARGETS ${PROJECT_NAME} DESTINATION lib)
+INSTALL(FILES ${CMAKE_BINARY_DIR}/${PROJECT_NAME}.pc DESTINATION lib/pkgconfig)
+
+INSTALL(TARGETS account-xml-verify DESTINATION bin)
+
+INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/account.h DESTINATION include)
+INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/account-error.h DESTINATION include)
+INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/include/account-types.h DESTINATION include)
+
+#ADD_SUBDIRECTORY(test)

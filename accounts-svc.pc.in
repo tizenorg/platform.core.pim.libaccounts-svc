@@ -1,0 +1,13 @@
+# Package Information for pkg-config
+
+prefix=@PREFIX@
+exec_prefix=@EXEC_PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: accounts-svc
+Description: Account DB library
+Version: @VERSION@
+Requires: sqlite3 dlog db-util glib-2.0 capi-base-common vconf capi-appfw-application libxml-2.0
+Libs: -L${libdir} -laccounts-svc
+Cflags: -I${includedir}
