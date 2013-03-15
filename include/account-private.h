@@ -102,16 +102,10 @@ NULL after passing 	them to free: free(NULL) is safe (it does nothing).
 #define ACCOUNT_CUSTOM_TABLE "account_custom"
 #define ACCOUNT_TYPE_TABLE "account_type"
 #define LABEL_TABLE "label"
+#define PROVIDER_FEATURE_TABLE "provider_feature"
 #define ACCOUNT_SQLITE_SEQ "sqlite_sequence"
 #define ACCOUNT_SQL_LEN_MAX 	1024
-#define ACCOUNT_TABLE_TOTAL_COUNT	2
-
-#define FACEBOOK_PKG_NAME		"com.samsung.facebook"
-#define EMAIL_PKG_NAME			"email-setting-efl"
-#define EXCHANGE_PKG_NAME		"activesync-ui"
-#define IMS_SERVICE_PKG_NAME		"ims-service"
-#define SAMSUNGACCOUNT_PKG_NAME  "com.samsung.samsung-account"
-#define DROPBOX_PKG_NAME  "com.samsung.dropbox"
+#define ACCOUNT_TABLE_TOTAL_COUNT	6
 
 typedef struct _account_s
 {
@@ -163,6 +157,7 @@ typedef struct _account_type_s
 	bool 	multiple_account_support;
 	GSList*	label_list;
 	GList*	account_type_list;
+	GSList*	provider_feature_list;
 }account_type_s;
 
 
@@ -173,6 +168,17 @@ typedef struct _label_s
 	char* locale;
 }label_s;
 
+typedef struct _provider_feature_s
+{
+	char* key;
+	char* app_id;
+}provider_feature_s;
+
+typedef struct _account_subscribe_s
+{
+	account_event_cb account_subscription_callback;
+	void* user_data;
+}account_subscribe_s;
 
 /**
  * @brief   Enumarations for account handle fields.
@@ -249,6 +255,12 @@ typedef enum {
 	LABEL_FIELD_END,
 }LABEL_DB_IDX;
 
+typedef enum {
+	PROVIDER_FEATURE_FIELD_NONE = -1,
+	PROVIDER_FEATURE_FIELD_APP_ID,
+	PROVIDER_FEATURE_FIELD_KEY,
+	PROVIDER_FEATURE_FIELD_END,
+}PROVIDER_FEATURE_DB_IDX;
 
 typedef sqlite3_stmt* account_stmt;
 
@@ -308,12 +320,16 @@ typedef sqlite3_stmt* account_stmt;
 
 #define LABEL_SCHEMA "create table %s \n"\
 	"(\n"\
-"AppId TEXT PRIMARY KEY, "\
+"AppId TEXT, "\
 "Label TEXT, "\
 "Locale TEXT"\
 ");"
 
-
+#define PROVIDER_FEATURE_SCHEMA "create table %s \n"\
+	"(\n"\
+"app_id TEXT, "\
+"key TEXT "\
+");"
 
 typedef struct GSList 		account_iterator_s;
 

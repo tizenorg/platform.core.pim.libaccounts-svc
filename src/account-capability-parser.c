@@ -29,7 +29,12 @@
 #include <libxml/parser.h>
 #include <app.h>
 
-#define ACCOUNT_XML_DIR "/opt/usr/share/account"
+#ifndef ACCOUNT_API
+#define ACCOUNT_API __attribute__ ((visibility("default")))
+#endif
+
+#define ACCOUNT_XML_DIR "/usr/share/account"
+#define ACCOUNT_XML_OPT_DIR "/opt/usr/share/account"
 #define BUFSIZE 1024
 
 static void _account_parse_doc(xmlDocPtr doc, xmlNodePtr cur,
@@ -61,7 +66,7 @@ static bool _account_check_file_exists(char *f_path)
 	return FALSE;
 }
 
-int account_get_application_capability_support(char *package_name,
+ACCOUNT_API int account_get_application_capability_support(char *package_name,
 								char *capability_filter, bool *supported)
 {
 	if (!package_name) {
@@ -89,7 +94,18 @@ int account_get_application_capability_support(char *package_name,
 
 	if (!_account_check_file_exists(xml_file_path)) {
 		ACCOUNT_ERROR("XML file not found for %s \n", package_name);
+
+		/*Check if file exists in /opt directory*/
+		ACCOUNT_MEMSET(xml_file_path, 0, sizeof(xml_file_path));
+		ACCOUNT_SNPRINTF(xml_file_path, BUFSIZE, "%s/%s.account.xml",
+								ACCOUNT_XML_OPT_DIR, package_name);
+
+		ACCOUNT_INFO("xml_file_path = %s \n",xml_file_path);
+
+		if (!_account_check_file_exists(xml_file_path)) {
+			ACCOUNT_ERROR("XML file not found for %s \n", package_name);
 		return ACCOUNT_ERROR_XML_FILE_NOT_FOUND;
+	}
 	}
 
 	doc = xmlParseFile(xml_file_path);
@@ -116,7 +132,7 @@ int account_get_application_capability_support(char *package_name,
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_application_multiple_account_support(
+ACCOUNT_API int account_get_application_multiple_account_support(
 								char *package_name,
 								bool *supported)
 {
@@ -142,7 +158,18 @@ int account_get_application_multiple_account_support(
 
 	if (!_account_check_file_exists(xml_file_path)) {
 		ACCOUNT_ERROR("XML file not found for %s \n", package_name);
+
+		/*Check if file exists in /opt directory*/
+		ACCOUNT_MEMSET(xml_file_path, 0, sizeof(xml_file_path));
+		ACCOUNT_SNPRINTF(xml_file_path, BUFSIZE, "%s/%s.account.xml",
+								ACCOUNT_XML_OPT_DIR, package_name);
+
+		ACCOUNT_VERBOSE("xml_file_path = %s \n",xml_file_path);
+
+		if (!_account_check_file_exists(xml_file_path)) {
+			ACCOUNT_ERROR("XML file not found for %s \n", package_name);
 		return ACCOUNT_ERROR_XML_FILE_NOT_FOUND;
+	}
 	}
 
 	doc = xmlParseFile(xml_file_path);
@@ -180,7 +207,7 @@ int account_get_application_multiple_account_support(
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_application_icon_path(char *package_name,
+ACCOUNT_API int account_get_application_icon_path(const char *package_name,
 											char **icon_path)
 {
 	if (!package_name) {
@@ -205,7 +232,18 @@ int account_get_application_icon_path(char *package_name,
 
 	if (!_account_check_file_exists(xml_file_path)) {
 		ACCOUNT_ERROR("XML file not found for %s \n", package_name);
+
+		/*Check if file exists in /opt directory*/
+		ACCOUNT_MEMSET(xml_file_path, 0, sizeof(xml_file_path));
+		ACCOUNT_SNPRINTF(xml_file_path, BUFSIZE, "%s/%s.account.xml",
+								ACCOUNT_XML_OPT_DIR, package_name);
+
+		ACCOUNT_INFO("xml_file_path = %s \n",xml_file_path);
+
+		if (!_account_check_file_exists(xml_file_path)) {
+			ACCOUNT_ERROR("XML file not found for %s \n", package_name);
 		return ACCOUNT_ERROR_XML_FILE_NOT_FOUND;
+	}
 	}
 
 	doc = xmlParseFile(xml_file_path);
@@ -253,7 +291,7 @@ static bool __service_iter_func(service_h service, const char* pkg_name,
 	return TRUE;
 }
 
-int account_query_service_list_by_capability(service_list_cb callback,
+ACCOUNT_API int account_query_service_list_by_capability(service_list_cb callback,
 									const char* capability_type,
 									void *user_data)
 {
@@ -298,12 +336,6 @@ int account_query_service_list_by_capability(service_list_cb callback,
 		ACCOUNT_VERBOSE("service_list_by : service_foreach_app_matched SUCCESS!!!!!! ret=%d\n",
 							ret);
 	}
-	pkg_list = g_list_append(pkg_list, strdup(FACEBOOK_PKG_NAME));
-	pkg_list = g_list_append(pkg_list, strdup(EMAIL_PKG_NAME));
-	pkg_list = g_list_append(pkg_list, strdup(EXCHANGE_PKG_NAME));
-	pkg_list = g_list_append(pkg_list, strdup(IMS_SERVICE_PKG_NAME));
-	pkg_list = g_list_append(pkg_list, strdup(SAMSUNGACCOUNT_PKG_NAME));
-	pkg_list = g_list_append(pkg_list, strdup(DROPBOX_PKG_NAME));
 
 	ret = service_destroy(service);
 	if (ret != SERVICE_ERROR_NONE) {

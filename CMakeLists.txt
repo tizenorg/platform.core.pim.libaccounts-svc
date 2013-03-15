@@ -6,7 +6,7 @@ SET(EXEC_PREFIX "\${prefix}")
 SET(LIBDIR "\${prefix}/lib")
 SET(INCLUDEDIR "\${prefix}/include ")
 SET(VERSION_MAJOR 0)
-SET(VERSION "${VERSION_MAJOR}.2.21")
+SET(VERSION "${VERSION_MAJOR}.2.40")
 
 SET(SRCS
 src/account.c
@@ -28,13 +28,13 @@ src/account-xml-verify.c
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include)
 
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common vconf capi-appfw-application libxml-2.0)
+pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common vconf capi-appfw-application libxml-2.0 pkgmgr-info aul)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
 ENDFOREACH(flag)
 
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Wall -Werror")
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Wall")
 SET(CMAKE_LDFLAGS "-Wl,-zdefs")
 
 ADD_DEFINITIONS("-DPREFIX=\"${CMAKE_INSTALL_PREFIX}\"")

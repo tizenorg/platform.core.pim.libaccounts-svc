@@ -1,10 +1,10 @@
 
 Name:       libaccounts-svc
 Summary:    Account DB library
-Version:    0.2.21
+Version:    0.2.40
 Release:    1
 Group:      TO_BE/FILLED_IN
-License:    TO BE FILLED IN
+License:    Apache-2.0
 Source0:    libaccounts-svc-%{version}.tar.gz
 
 BuildRequires:  cmake
@@ -15,13 +15,14 @@ BuildRequires:  pkgconfig(capi-base-common)
 BuildRequires:  pkgconfig(vconf)
 BuildRequires:  pkgconfig(capi-appfw-application)
 BuildRequires:  pkgconfig(libxml-2.0)
+BuildRequires:  pkgconfig(pkgmgr-info)
+BuildRequires:  pkgconfig(aul)
 Requires(post): /sbin/ldconfig
 Requires(post): /usr/bin/sqlite3
 Requires(postun): /sbin/ldconfig
 
 %description
 Account DB libraryXB-Public-Package: no
-
 
 %package devel
 Summary:    Development files for %{name}
@@ -30,12 +31,11 @@ Requires:   %{name} = %{version}-%{release}
 %description devel
 Development files for %{name}
 
-
 %prep
 %setup -q
 
-
 %build
+export CFLAGS="${CFLAGS} -fPIC -fvisibility=hidden"
 cmake . -DCMAKE_INSTALL_PREFIX=/usr
 
 make %{?jobs:-j%jobs}
@@ -45,7 +45,6 @@ rm -rf %{buildroot}
 %make_install
 
 rm -rf %{buildroot}/usr/lib/accounts-svc
-
 
 %post
 /sbin/ldconfig
@@ -57,16 +56,17 @@ if [ ! -f /opt/dbspace/.account.db ]
 rm -rf /opt/dbspace/.account.db*
 then
 	sqlite3 /opt/dbspace/.account.db 'PRAGMA journal_mode = PERSIST;
-	CREATE TABLE if not exists label (AppId TEXT, Label TEXT, Locale TEXT);
-	CREATE TABLE if not exists account_type (_id INTEGER PRIMARY KEY AUTOINCREMENT, AppId TEXT,
-	ServiceProviderId TEXT, IconPath TEXT, SmallIconPath TEXT, MultipleAccountSupport INT);
-	CREATE TABLE if not exists account_custom (AccountId INTEGER, AppId TEXT, Key TEXT, Value TEXT);
-	CREATE TABLE if not exists account (_id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, email_address TEXT, display_name TEXT, icon_path TEXT,
-	source TEXT, package_name TEXT, access_token TEXT, domain_name TEXT, auth_type INTEGER, secret INTEGER, sync_support INTEGER,
-	txt_custom0 TEXT, txt_custom1 TEXT, txt_custom2 TEXT, txt_custom3 TEXT, txt_custom4 TEXT,
-	int_custom0 INTEGER, int_custom1 INTEGER, int_custom2 INTEGER, int_custom3 INTEGER, int_custom4 INTEGER);
-	CREATE TABLE if not exists capability (_id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, value INTEGER,
-	package_name TEXT, user_name TEXT,  account_id INTEGER, FOREIGN KEY (account_id) REFERENCES account(_id));'
+        CREATE TABLE if not exists label (AppId TEXT, Label TEXT, Locale TEXT);
+        CREATE TABLE if not exists account_type (_id INTEGER PRIMARY KEY AUTOINCREMENT, AppId TEXT,
+        ServiceProviderId TEXT, IconPath TEXT, SmallIconPath TEXT, MultipleAccountSupport INT);
+        CREATE TABLE if not exists account_custom (AccountId INTEGER, AppId TEXT, Key TEXT, Value TEXT);
+        CREATE TABLE if not exists account (_id INTEGER PRIMARY KEY AUTOINCREMENT, user_name TEXT, email_address TEXT, display_name TEXT, icon_path TEXT,
+        source TEXT, package_name TEXT, access_token TEXT, domain_name TEXT, auth_type INTEGER, secret INTEGER, sync_support INTEGER,
+        txt_custom0 TEXT, txt_custom1 TEXT, txt_custom2 TEXT, txt_custom3 TEXT, txt_custom4 TEXT,
+        int_custom0 INTEGER, int_custom1 INTEGER, int_custom2 INTEGER, int_custom3 INTEGER, int_custom4 INTEGER);
+        CREATE TABLE if not exists capability (_id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT, value INTEGER,
+        package_name TEXT, user_name TEXT,  account_id INTEGER, FOREIGN KEY (account_id) REFERENCES account(_id));
+	CREATE TABLE if not exists provider_feature (app_id TEXT, key TEXT);'
 fi
 
 mkdir -p /opt/usr/share/account
@@ -88,10 +88,7 @@ then
 	chsmack -a 'libaccounts-svc::db' /opt/dbspace/.account.db
 fi
 
-
 %postun -p /sbin/ldconfig
-
-
 
 %files
 %manifest libaccounts-svc.manifest

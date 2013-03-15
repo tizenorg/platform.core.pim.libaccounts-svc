@@ -12,7 +12,7 @@
 		<domain name="libaccounts-svc"/>
 	</request>
 	<assign>
-		<filesystem path="/usr/lib/libaccounts-svc.so" label="_" />
-		<filesystem path="/usr/lib/libaccounts-svc.so.0.2.21" label="_" />
+		<filesystem path="/usr/lib/libaccounts-svc.so.0" label="_" />
+		<filesystem path="/usr/lib/libaccounts-svc.so.0.2.40" label="_" />
 	</assign>
 </manifest>

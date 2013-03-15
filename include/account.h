@@ -33,6 +33,10 @@ extern "C"
 {
 #endif
 
+#ifndef ACCOUNT_API
+#define ACCOUNT_API __attribute__ ((visibility("default")))
+#endif
+
 /**
  * @file        account.h
  * @brief       This file contains the Account API for account management
@@ -92,6 +96,8 @@ typedef bool (*account_custom_cb)(char* key, char* value, void *user_data);
 
 typedef bool (*account_type_cb)(account_type_h account_type, void *user_data);
 typedef bool (*account_label_cb)(char* app_id, char* label, char* locale, void *user_data);
+typedef bool (*provider_feature_cb)(char* app_id, char* key, void* user_data);
+typedef bool (*account_event_cb)(const char* event_type, int account_id, void* user_data);
 
 
 /**
@@ -103,7 +109,7 @@ typedef bool (*account_label_cb)(char* app_id, char* label, char* locale, void *
  *
  * @see account_disconnect()
  */
-int account_connect(void);
+ACCOUNT_API int account_connect(void);
 
 
 /**
@@ -115,7 +121,7 @@ int account_connect(void);
  *
  * @see account_connect()
  */
-int account_disconnect(void);
+ACCOUNT_API int account_disconnect(void);
 
 
 /**
@@ -133,7 +139,7 @@ int account_disconnect(void);
  *
  * @see account_destroy()
  */
-int account_create(account_h *account);
+ACCOUNT_API int account_create(account_h *account);
 
 
 /**
@@ -147,7 +153,7 @@ int account_create(account_h *account);
  *
  * @see account_create()
  */
-int account_destroy(account_h account);
+ACCOUNT_API int account_destroy(account_h account);
 
 
 /**
@@ -160,6 +166,9 @@ int account_destroy(account_h account);
  * @retval	#ACCOUNT_ERROR_NONE Successful
  * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
  * @retval	#ACCOUNT_ERROR_DB_FAILED  Database operation failed
+ * @retval	#ACCOUNT_ERROR_DUPLICATED  Same user name exist in your application
+ * @retval	#ACCOUNT_ERROR_NOT_ALLOW_MULTIPLE  when you try to add an account inspite of multiple account false
+ * @retval	#ACCOUNT_ERROR_NOT_REGISTERED_PROVIDER  when you try to add an account though you didn't register account type in manifest
  *
  * @pre	This function requires an open connection to account service by account_connect().
  *
@@ -170,7 +179,7 @@ int account_destroy(account_h account);
  * @see account_update_to_db_by_id()
  * @see account_update_to_db_by_user_name()
  */
-int account_insert_to_db(account_h account, int *account_db_id);
+ACCOUNT_API int account_insert_to_db(account_h account, int *account_db_id);
 
 
 /**
@@ -192,7 +201,7 @@ int account_insert_to_db(account_h account, int *account_db_id);
  * @see account_update_to_db_by_id()
  * @see account_update_to_db_by_user_name()
  */
-int account_delete_from_db_by_id(int account_db_id);
+ACCOUNT_API int account_delete_from_db_by_id(int account_db_id);
 
 
 /**
@@ -215,7 +224,7 @@ int account_delete_from_db_by_id(int account_db_id);
  * @see account_update_to_db_by_id()
  * @see account_update_to_db_by_user_name()
  */
-int account_delete_from_db_by_user_name(char *user_name, char *package_name);
+ACCOUNT_API int account_delete_from_db_by_user_name(char *user_name, char *package_name);
 
 
 /**
@@ -237,7 +246,7 @@ int account_delete_from_db_by_user_name(char *user_name, char *package_name);
  * @see account_update_to_db_by_id()
  * @see account_update_to_db_by_user_name()
  */
-int account_delete_from_db_by_package_name(char *package_name);
+ACCOUNT_API int account_delete_from_db_by_package_name(char *package_name);
 
 
 /**
@@ -261,7 +270,7 @@ int account_delete_from_db_by_package_name(char *package_name);
  * @see account_delete_from_db_by_package_name()
  * @see account_update_to_db_by_user_name()
  */
-int account_update_to_db_by_id(account_h account, int account_id);
+ACCOUNT_API int account_update_to_db_by_id(account_h account, int account_id);
 
 
 /**
@@ -287,7 +296,7 @@ int account_update_to_db_by_id(account_h account, int account_id);
  * @see account_update_to_db_by_id()
  *
  */
-int account_update_to_db_by_user_name(account_h account, const char *user_name, const char *package_name);
+ACCOUNT_API int account_update_to_db_by_user_name(account_h account, const char *user_name, const char *package_name);
 
 /**
  * @brief	Gets the account id of account.
@@ -301,7 +310,7 @@ int account_update_to_db_by_user_name(account_h account, const char *user_name, 
  * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
  *
  */
-int account_get_account_id(account_h account, int *account_id);
+ACCOUNT_API int account_get_account_id(account_h account, int *account_id);
 
 
 /**
@@ -319,7 +328,7 @@ int account_get_account_id(account_h account, int *account_id);
  *
  * @see account_set_user_name()
  */
-int account_get_user_name(account_h account, char **user_name);
+ACCOUNT_API int account_get_user_name(account_h account, char **user_name);
 
 
 /**
@@ -334,7 +343,7 @@ int account_get_user_name(account_h account, char **user_name);
  *
  * @see account_get_user_name()
  */
-int account_set_user_name(account_h account, const char *user_name);
+ACCOUNT_API int account_set_user_name(account_h account, const char *user_name);
 
 
 /**
@@ -352,7 +361,7 @@ int account_set_user_name(account_h account, const char *user_name);
  *
  * @see account_get_display_name()
  */
-int account_get_display_name(account_h account, char **display_name);
+ACCOUNT_API int account_get_display_name(account_h account, char **display_name);
 
 
 /**
@@ -367,7 +376,7 @@ int account_get_display_name(account_h account, char **display_name);
  *
  * @see account_get_display_name()
  */
-int account_set_display_name(account_h account, const char *display_name);
+ACCOUNT_API int account_set_display_name(account_h account, const char *display_name);
 
 /**
  * @brief	Gets the capability detail of account.
@@ -383,7 +392,7 @@ int account_set_display_name(account_h account, const char *display_name);
  *
  * @see account_set_capability()
  */
-int account_get_capability(account_h account, const char* capability_type, account_capability_state_e* capability_value);
+ACCOUNT_API int account_get_capability(account_h account, const char* capability_type, account_capability_state_e* capability_value);
 
 /**
  * @brief	Gets all the capabilities of account.
@@ -398,7 +407,7 @@ int account_get_capability(account_h account, const char* capability_type, accou
  *
  * @see account_set_capability()
  */
-int account_get_capability_all(account_h account, capability_cb cb_func, void *user_data);
+ACCOUNT_API int account_get_capability_all(account_h account, capability_cb cb_func, void *user_data);
 
 /**
  * @brief	Sets the capability.
@@ -413,7 +422,7 @@ int account_get_capability_all(account_h account, capability_cb cb_func, void *u
  *
  * @see account_get_capability()
  */
-int account_set_capability(account_h account, const char* capability_type, account_capability_state_e capability_state);
+ACCOUNT_API int account_set_capability(account_h account, const char* capability_type, account_capability_state_e capability_state);
 
 
 /**
@@ -431,7 +440,7 @@ int account_set_capability(account_h account, const char* capability_type, accou
  *
  * @see account_set_icon_path()
  */
-int account_get_icon_path(account_h account, char **icon_path);
+ACCOUNT_API int account_get_icon_path(account_h account, char **icon_path);
 
 
 /**
@@ -446,7 +455,7 @@ int account_get_icon_path(account_h account, char **icon_path);
  *
  * @see account_get_icon_path()
  */
-int account_set_icon_path(account_h account, const char *icon_path);
+ACCOUNT_API int account_set_icon_path(account_h account, const char *icon_path);
 
 
 /**
@@ -464,7 +473,7 @@ int account_set_icon_path(account_h account, const char *icon_path);
  *
  * @see account_set_domain_name()
  */
-int account_get_domain_name(account_h account, char **domain_name);
+ACCOUNT_API int account_get_domain_name(account_h account, char **domain_name);
 
 
 /**
@@ -479,7 +488,7 @@ int account_get_domain_name(account_h account, char **domain_name);
  *
  * @see account_get_domain_name()
  */
-int account_set_domain_name(account_h account, const char *domain_name);
+ACCOUNT_API int account_set_domain_name(account_h account, const char *domain_name);
 
 
 /**
@@ -497,7 +506,7 @@ int account_set_domain_name(account_h account, const char *domain_name);
  *
  * @see account_set_email_address()
  */
-int account_get_email_address(account_h account, char **email_address);
+ACCOUNT_API int account_get_email_address(account_h account, char **email_address);
 
 
 /**
@@ -512,7 +521,7 @@ int account_get_email_address(account_h account, char **email_address);
  *
  * @see account_get_email_addres()
  */
-int account_set_email_address(account_h account, const char *email_address);
+ACCOUNT_API int account_set_email_address(account_h account, const char *email_address);
 
 
 /**
@@ -530,7 +539,7 @@ int account_set_email_address(account_h account, const char *email_address);
  *
  * @see account_set_package_name()
  */
-int account_get_package_name(account_h account, char **package_name);
+ACCOUNT_API int account_get_package_name(account_h account, char **package_name);
 
 
 /**
@@ -545,7 +554,7 @@ int account_get_package_name(account_h account, char **package_name);
  *
  * @see account_get_email_addres()
  */
-int account_set_package_name(account_h account, const char *package_name);
+ACCOUNT_API int account_set_package_name(account_h account, const char *package_name);
 
 
 /**
@@ -563,7 +572,7 @@ int account_set_package_name(account_h account, const char *package_name);
  *
  * @see account_set_access_token()
  */
-int account_get_access_token(account_h account, char **access_token);
+ACCOUNT_API int account_get_access_token(account_h account, char **access_token);
 
 
 /**
@@ -578,7 +587,7 @@ int account_get_access_token(account_h account, char **access_token);
  *
  * @see account_get_access_token()
  */
-int account_set_access_token(account_h account, const char *access_token);
+ACCOUNT_API int account_set_access_token(account_h account, const char *access_token);
 
 
 /**
@@ -597,7 +606,7 @@ int account_set_access_token(account_h account, const char *access_token);
  *
  * @see account_set_user_text()
  */
-int account_get_user_text(account_h account, int user_text_index, char **user_text);
+ACCOUNT_API int account_get_user_text(account_h account, int user_text_index, char **user_text);
 
 
 /**
@@ -613,7 +622,7 @@ int account_get_user_text(account_h account, int user_text_index, char **user_te
  *
  * @see account_get_user_text()
  */
-int account_set_user_text(account_h account, int user_text_index, const char *user_text);
+ACCOUNT_API int account_set_user_text(account_h account, int user_text_index, const char *user_text);
 
 
 /**
@@ -629,7 +638,7 @@ int account_set_user_text(account_h account, int user_text_index, const char *us
  *
  * @see account_set_user_int()
  */
-int account_get_user_int(account_h account, int user_int_index, int *user_integer);
+ACCOUNT_API int account_get_user_int(account_h account, int user_int_index, int *user_integer);
 
 
 /**
@@ -645,7 +654,7 @@ int account_get_user_int(account_h account, int user_int_index, int *user_intege
  *
  * @see account_get_user_int()
  */
-int account_set_user_int(account_h account, int user_int_index, int user_integer);
+ACCOUNT_API int account_set_user_int(account_h account, int user_int_index, int user_integer);
 
 
 /**
@@ -660,7 +669,7 @@ int account_set_user_int(account_h account, int user_int_index, int user_integer
  *
  * @see account_set_auth_type()
  */
-int account_get_auth_type(account_h account, account_auth_type_e *auth_type);
+ACCOUNT_API int account_get_auth_type(account_h account, account_auth_type_e *auth_type);
 
 
 /**
@@ -675,7 +684,7 @@ int account_get_auth_type(account_h account, account_auth_type_e *auth_type);
  *
  * @see account_get_auth_type()
  */
-int account_set_auth_type(account_h account, const account_auth_type_e auth_type);
+ACCOUNT_API int account_set_auth_type(account_h account, const account_auth_type_e auth_type);
 
 
 /**
@@ -690,7 +699,7 @@ int account_set_auth_type(account_h account, const account_auth_type_e auth_type
  *
  * @see account_set_secret()
  */
-int account_get_secret(account_h account, account_secrecy_state_e *secret);
+ACCOUNT_API int account_get_secret(account_h account, account_secrecy_state_e *secret);
 
 
 /**
@@ -705,7 +714,7 @@ int account_get_secret(account_h account, account_secrecy_state_e *secret);
  *
  * @see account_get_secret()
  */
-int account_set_secret(account_h account, const account_secrecy_state_e secret);
+ACCOUNT_API int account_set_secret(account_h account, const account_secrecy_state_e secret);
 
 /**
  * @brief	Gets the sync support.
@@ -719,7 +728,7 @@ int account_set_secret(account_h account, const account_secrecy_state_e secret);
  *
  * @see account_set_sync_support()
  */
-int account_get_sync_support(account_h account, account_sync_state_e *sync_support);
+ACCOUNT_API int account_get_sync_support(account_h account, account_sync_state_e *sync_support);
 
 
 /**
@@ -734,7 +743,7 @@ int account_get_sync_support(account_h account, account_sync_state_e *sync_suppo
  *
  * @see account_get_sync_support()
  */
-int account_set_sync_support(account_h account, const account_sync_state_e sync_support);
+ACCOUNT_API int account_set_sync_support(account_h account, const account_sync_state_e sync_support);
 
 
 /**
@@ -752,7 +761,7 @@ int account_set_sync_support(account_h account, const account_sync_state_e sync_
  *
  * @see account_set_source()
  */
-int account_get_source(account_h account, char **source);
+ACCOUNT_API int account_get_source(account_h account, char **source);
 
 
 /**
@@ -767,7 +776,7 @@ int account_get_source(account_h account, char **source);
  *
  * @see account_get_source()
  */
-int account_set_source(account_h account, const char *source);
+ACCOUNT_API int account_set_source(account_h account, const char *source);
 
 /**
  * @brief	Sets the capability.
@@ -782,7 +791,7 @@ int account_set_source(account_h account, const char *source);
  *
  * @see account_get_custom()
  */
-int account_set_custom(account_h account, const char* key, const char* value);
+ACCOUNT_API int account_set_custom(account_h account, const char* key, const char* value);
 
 /**
  * @brief	Gets the user specific custom text of account key.
@@ -798,7 +807,7 @@ int account_set_custom(account_h account, const char* key, const char* value);
  *
  * @see account_set_custom()
  */
-int account_get_custom(account_h account, const char* key, char** value);
+ACCOUNT_API int account_get_custom(account_h account, const char* key, char** value);
 
 
 /**
@@ -814,7 +823,7 @@ int account_get_custom(account_h account, const char* key, char** value);
  *
  * @see account_set_custom()
  */
-int account_get_custom_all(account_h account, account_custom_cb cb_func, void* user_data);
+ACCOUNT_API int account_get_custom_all(account_h account, account_custom_cb cb_func, void* user_data);
 
 /**
  * @brief	Retrieves all accounts details by invoking the given callback function iteratively.
@@ -836,7 +845,7 @@ int account_get_custom_all(account_h account, account_custom_cb cb_func, void* u
  * @see account_query_account_by_package_name()
  * @see account_query_account_by_capability()
  */
-int account_foreach_account_from_db(account_cb callback, void *user_data);
+ACCOUNT_API int account_foreach_account_from_db(account_cb callback, void *user_data);
 
 
 /**
@@ -858,7 +867,7 @@ int account_foreach_account_from_db(account_cb callback, void *user_data);
  * @see account_query_account_by_package_name()
  * @see account_query_account_by_capability()
  */
-int account_query_account_by_account_id(int account_db_id, account_h *account);
+ACCOUNT_API int account_query_account_by_account_id(int account_db_id, account_h *account);
 
 /**
  * @brief	Retrieves all accounts with the user name.
@@ -882,7 +891,7 @@ int account_query_account_by_account_id(int account_db_id, account_h *account);
  * @see account_query_account_by_capability()
  *
  */
-int account_query_account_by_user_name(account_cb callback, const char* user_name, void* user_data);
+ACCOUNT_API int account_query_account_by_user_name(account_cb callback, const char* user_name, void* user_data);
 
 /**
  * @brief	Retrieves all accounts with the package name.
@@ -905,10 +914,10 @@ int account_query_account_by_user_name(account_cb callback, const char* user_nam
  * @see account_query_account_by_user_name()
  * @see account_query_account_by_capability()
  */
-int account_query_account_by_package_name(account_cb callback, const char *package_name, void *user_data);
+ACCOUNT_API int account_query_account_by_package_name(account_cb callback, const char *package_name, void *user_data);
 
 /**
- * @brief	Retrieves all accounts with the capability.
+ * @brief	Retrieves all accounts with the capability type and capability value.
  *
  * @param[in]	callback The callback function to invoke
  * @param[in]	capability_type The capablity type to search
@@ -929,7 +938,30 @@ int account_query_account_by_package_name(account_cb callback, const char *packa
  * @see account_query_account_by_user_name()
  * @see account_query_account_by_package_name()
  */
-int account_query_account_by_capability(account_cb callback, const char* capability_type, account_capability_state_e capability_value, void *user_data);
+ACCOUNT_API int account_query_account_by_capability(account_cb callback, const char* capability_type, account_capability_state_e capability_value, void *user_data);
+
+/**
+ * @brief	Retrieves all accounts with the capability type.
+ *
+ * @param[in]	callback The callback function to invoke
+ * @param[in]	capability_type The capablity type to search
+ * @param[in]	user_data The user data to be passed to the callback function
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ * @retval	#ACCOUNT_ERROR_DB_FAILED Database operation failed
+ *
+ * @pre This function requires an open connection to account service by account_connect().
+ * @post	This function invokes account_cb().
+ *
+ * @see account_connect()
+ * @see account_foreach_account_from_db()
+ * @see account_query_account_by_account_id()
+ * @see account_query_account_by_user_name()
+ * @see account_query_account_by_package_name()
+ */
+ACCOUNT_API int account_query_account_by_capability_type(account_cb cb_func, const char* capability_type, void* user_data);
 
 /**
  * @brief	Retrieves all capabilities with the account database ID.
@@ -950,7 +982,7 @@ int account_query_account_by_capability(account_cb callback, const char* capabil
  * @see account_get_capability()
  * @see account_set_capability()
  */
-int account_query_capability_by_account_id(capability_cb callback, int account_db_id, void *user_data);
+ACCOUNT_API int account_query_capability_by_account_id(capability_cb callback, int account_db_id, void *user_data);
 
 
 /**
@@ -966,7 +998,7 @@ int account_query_capability_by_account_id(capability_cb callback, int account_d
  *
  * @see account_connect()
  */
-int account_get_total_count_from_db(int *count);
+ACCOUNT_API int account_get_total_count_from_db(int *count);
 
 /**
  * @brief	changes sync status of account by account id
@@ -983,7 +1015,7 @@ int account_get_total_count_from_db(int *count);
  *
  * @see account_connect()
  */
-int account_update_sync_status_by_id(int account_db_id, const account_sync_state_e sync_status);
+ACCOUNT_API int account_update_sync_status_by_id(int account_db_id, const account_sync_state_e sync_status);
 
 /**
  * @brief	Called once for each service provider of account
@@ -1017,7 +1049,7 @@ typedef bool (*service_list_cb)(char *package_name, char *icon_path, bool multip
  * @post	This function invokes service_list_cb().
  *
  */
-int account_query_service_list_by_capability(service_list_cb callback, const char* capability_type, void *user_data);
+ACCOUNT_API int account_query_service_list_by_capability(service_list_cb callback, const char* capability_type, void *user_data);
 
 
 /**
@@ -1034,7 +1066,7 @@ int account_query_service_list_by_capability(service_list_cb callback, const cha
  * @retval	#ACCOUNT_ERROR_XML_FILE_NOT_FOUND XML file not found
  *
  */
-int account_get_application_capability_support(char *package_name, char *capability_filter, bool *supported);
+ACCOUNT_API int account_get_application_capability_support(char *package_name, char *capability_filter, bool *supported);
 
 
 /**
@@ -1050,7 +1082,7 @@ int account_get_application_capability_support(char *package_name, char *capabil
  * @retval	#ACCOUNT_ERROR_XML_FILE_NOT_FOUND XML file not found
  *
  */
-int account_get_application_multiple_account_support(char * package_name, bool * supported);
+ACCOUNT_API int account_get_application_multiple_account_support(char * package_name, bool * supported);
 
 /**
  * @brief	Get application's icon path.
@@ -1067,7 +1099,7 @@ int account_get_application_multiple_account_support(char * package_name, bool *
  * @retval	#ACCOUNT_ERROR_XML_FILE_NOT_FOUND XML file not found
  *
  */
-int account_get_application_icon_path(char *package_name, char **icon_path);
+ACCOUNT_API int account_get_application_icon_path(const char *package_name, char **icon_path);
 
 
 /* Account type API */
@@ -1088,7 +1120,7 @@ int account_get_application_icon_path(char *package_name, char **icon_path);
  *
  * @see account_type_destroy()
  */
-int account_type_create(account_type_h *account_type);
+ACCOUNT_API int account_type_create(account_type_h *account_type);
 
 /**
  * @brief	Destroys the account type handle and releases all its resources.
@@ -1102,7 +1134,7 @@ int account_type_create(account_type_h *account_type);
  *
  * @see account_type_create()
  */
-int account_type_destroy(account_type_h account_type);
+ACCOUNT_API int account_type_destroy(account_type_h account_type);
 
 /**
  * @brief	Sets the app id. It should be filled with your application id. e.g) com.tizen.testapp
@@ -1119,7 +1151,7 @@ int account_type_destroy(account_type_h account_type);
  *
  * @see account_type_get_app_id()
  */
-int account_type_set_app_id(account_type_h account_type, const char *app_id);
+ACCOUNT_API int account_type_set_app_id(account_type_h account_type, const char *app_id);
 
 /**
  * @brief	Sets the service provider id. It should be filled with your service provider id.
@@ -1136,7 +1168,7 @@ int account_type_set_app_id(account_type_h account_type, const char *app_id);
  *
  * @see account_type_get_service_provider_id()
  */
-int account_type_set_service_provider_id(account_type_h account_type, const char *service_provider_id);
+ACCOUNT_API int account_type_set_service_provider_id(account_type_h account_type, const char *service_provider_id);
 
 /**
  * @brief	Sets icon path. It represents your service provider or application.
@@ -1153,7 +1185,7 @@ int account_type_set_service_provider_id(account_type_h account_type, const char
  *
  * @see account_type_get_icon_path()
  */
-int account_type_set_icon_path(account_type_h account_type, const char *icon_path);
+ACCOUNT_API int account_type_set_icon_path(account_type_h account_type, const char *icon_path);
 
 /**
  * @brief	Sets small icon path. It also represents your service provider or application.
@@ -1170,7 +1202,7 @@ int account_type_set_icon_path(account_type_h account_type, const char *icon_pat
  *
  * @see account_type_get_small_icon_path()
  */
-int account_type_set_small_icon_path(account_type_h account_type, const char *small_icon_path);
+ACCOUNT_API int account_type_set_small_icon_path(account_type_h account_type, const char *small_icon_path);
 
 /**
  * @brief	Sets multiple account. It represents whether your application support multiple accounts or not.
@@ -1187,7 +1219,7 @@ int account_type_set_small_icon_path(account_type_h account_type, const char *sm
  *
  * @see account_type_get_multiple_account_support()
  */
-int account_type_set_multiple_account_support(account_type_h account_type, const bool multiple_account_support);
+ACCOUNT_API int account_type_set_multiple_account_support(account_type_h account_type, const bool multiple_account_support);
 
 /**
  * @brief	Sets label and locale. Label represents the name of account type.
@@ -1203,7 +1235,59 @@ int account_type_set_multiple_account_support(account_type_h account_type, const
  *
  * @see account_type_get_label()
  */
-int account_type_set_label(account_type_h account_type, const char* label, const char* locale);
+ACCOUNT_API int account_type_set_label(account_type_h account_type, const char* label, const char* locale);
+
+/**
+ * @brief	Sets the provider feature.
+ *
+ * @param[in]	account_type The account type handle
+ * @param[in]	provider_feature This will be capability key of account
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ *
+ * @see account_set_capability()
+ */
+ACCOUNT_API int account_type_set_provider_feature(account_type_h account_type, const char* provider_feature);
+
+/**
+ * @brief	Retrieves provider feature information with your applicaiton id.
+ *
+ * @param[in]	cb_func Callback function will carry provider feature name of app id.
+ * @param[in]	app_id Your application ID to search
+ * @param[in] user_data User data if you have your private data to carry into callback function, you can use.
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ * @retval	#ACCOUNT_ERROR_DB_FAILED Database operation failed
+ *
+ * @pre	This function requires an open connection to account service by account_connect().
+ *
+ * @see account_connect()
+ * @see account_type_set_provider_feature()
+ * @see account_disconnect()
+ */
+ACCOUNT_API int account_type_query_provider_feature_by_app_id(provider_feature_cb cb_func, const char* app_id, void *user_data );
+
+/**
+ * @brief	Retrieves label information with your applicaiton id.
+ *
+ * @param[in]	cb_func Callback function will carry provider feature name of app id.
+ * @param[in]	app_id Your application ID to search
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	TRUE means the application supports the given capability
+ * @retval	FALSE means the application does not support the given capability
+ *
+ * @pre	This function requires an open connection to account service by account_connect().
+ *
+ * @see account_connect()
+ * @see account_type_set_provider_feature()
+ * @see account_disconnect()
+ */
+ACCOUNT_API bool account_type_query_supported_feature(const char* app_id, const char* capability);
 
 /**
  * @brief	Gets the application id of account type.
@@ -1222,7 +1306,7 @@ int account_type_set_label(account_type_h account_type, const char* label, const
  * @see account_type_query_by_app_id()
  * @see account_type_set_app_id()
  */
-int account_type_get_app_id(account_type_h account_type, char **app_id);
+ACCOUNT_API int account_type_get_app_id(account_type_h account_type, char **app_id);
 
 /**
  * @brief	Gets the service provider id of account type.
@@ -1241,7 +1325,7 @@ int account_type_get_app_id(account_type_h account_type, char **app_id);
  * @see account_type_query_by_app_id()
  * @see account_type_set_service_provider_id()
  */
-int account_type_get_service_provider_id(account_type_h account_type, char **service_provider_id);
+ACCOUNT_API int account_type_get_service_provider_id(account_type_h account_type, char **service_provider_id);
 
 /**
  * @brief	Gets icon path of account type.
@@ -1260,7 +1344,7 @@ int account_type_get_service_provider_id(account_type_h account_type, char **ser
  * @see account_type_query_by_app_id()
  * @see account_type_set_icon_path()
  */
-int account_type_get_icon_path(account_type_h account_type, char **icon_path);
+ACCOUNT_API int account_type_get_icon_path(account_type_h account_type, char **icon_path);
 
 /**
  * @brief	Gets small icon path of account type.
@@ -1279,7 +1363,7 @@ int account_type_get_icon_path(account_type_h account_type, char **icon_path);
  * @see account_type_query_by_app_id()
  * @see account_type_set_small_icon_path()
  */
-int account_type_get_small_icon_path(account_type_h account_type, char **small_icon_path);
+ACCOUNT_API int account_type_get_small_icon_path(account_type_h account_type, char **small_icon_path);
 
 /**
  * @brief	Gets small icon path of account type.
@@ -1296,7 +1380,27 @@ int account_type_get_small_icon_path(account_type_h account_type, char **small_i
  * @see account_type_query_by_app_id()
  * @see account_type_set_small_icon_path()
  */
-int account_type_get_multiple_account_support(account_type_h account_type, int *multiple_account_support);
+ACCOUNT_API int account_type_get_multiple_account_support(account_type_h account_type, int *multiple_account_support);
+
+/**
+ * @brief	Retrieves provider feature information with the given account_type_h.
+ *
+ * @param[in]	account_type The account type handle. It should be given by account_type_query_* functions or account_type_foreach_account_type_from_db
+ * @param[in]	cb_func Callback function will carry provider feature name of app id.
+ * @param[in] user_data User data if you have your private data to carry into callback function, you can use.
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ * @retval	#ACCOUNT_ERROR_DB_FAILED Database operation failed
+ *
+ * @pre	This function requires an open connection to account service by account_connect().
+ *
+ * @see account_connect()
+ * @see account_type_set_provider_feature()
+ * @see account_disconnect()
+ */
+ACCOUNT_API int account_type_get_provider_feature_all(account_type_h account_type, provider_feature_cb cb_func, void* user_data);
 
 /**
  * @brief	Gets the label information detail of account type.
@@ -1313,7 +1417,7 @@ int account_type_get_multiple_account_support(account_type_h account_type, int *
  * @see account_type_query_by_app_id()
  * @see account_type_set_label()
  */
-int account_type_get_label(account_type_h account_type, account_label_cb cb_func, void *user_data);
+ACCOUNT_API int account_type_get_label(account_type_h account_type, account_label_cb cb_func, void *user_data);
 
 /**
  * @brief	Inserts the account type details to the database.
@@ -1340,7 +1444,7 @@ int account_type_get_label(account_type_h account_type, account_label_cb cb_func
  * @see account_type_update_to_db_by_app_id()
  * @see account_disconnect()
  */
-int account_type_insert_to_db(account_type_h account_type, int* account_type_id);
+ACCOUNT_API int account_type_insert_to_db(account_type_h account_type, int* account_type_id);
 
 /**
  * @brief	Updates the account details to the account database.
@@ -1367,7 +1471,7 @@ int account_type_insert_to_db(account_type_h account_type, int* account_type_id)
  * @see account_type_delete_by_app_id()
  * @see account_disconnect()
  */
-int account_type_update_to_db_by_app_id(const account_type_h account_type, const char* app_id);
+ACCOUNT_API int account_type_update_to_db_by_app_id(const account_type_h account_type, const char* app_id);
 
 /**
  * @brief	Deletes the account type from the account database by application id.
@@ -1386,7 +1490,7 @@ int account_type_update_to_db_by_app_id(const account_type_h account_type, const
  * @see account_type_update_to_db_by_app_id()
  * @see account_disconnect()
  */
-int account_type_delete_by_app_id(const char* app_id);
+ACCOUNT_API int account_type_delete_by_app_id(const char* app_id);
 
 /**
  * @brief	Retrieves label information with your applicaiton id.
@@ -1407,7 +1511,7 @@ int account_type_delete_by_app_id(const char* app_id);
  * @see account_type_foreach_account_type_from_db()
  * @see account_disconnect()
  */
-int account_type_query_label_by_app_id(account_label_cb cb_func, const char* app_id, void *user_data );
+ACCOUNT_API int account_type_query_label_by_app_id(account_label_cb cb_func, const char* app_id, void *user_data );
 
 /**
  * @brief	Retrieves account type information with your applicaiton id.
@@ -1419,6 +1523,7 @@ int account_type_query_label_by_app_id(account_label_cb cb_func, const char* app
  * @retval	#ACCOUNT_ERROR_NONE Successful
  * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
  * @retval	#ACCOUNT_ERROR_DB_FAILED Database operation failed
+ * @retval	#ACCOUNT_ERROR_RECORD_NOT_FOUND query data is not exist
  *
  * @pre	This function requires an open connection to account service by account_connect().
  *
@@ -1432,7 +1537,7 @@ int account_type_query_label_by_app_id(account_label_cb cb_func, const char* app
  * @see account_type_get_label()
  * @see account_type_destroy()
  */
-int account_type_query_by_app_id(const char* app_id, account_type_h *account_type);
+ACCOUNT_API int account_type_query_by_app_id(const char* app_id, account_type_h *account_type);
 
 /**
  * @brief	Retrieves all account type information with your applicaiton id.
@@ -1457,7 +1562,7 @@ int account_type_query_by_app_id(const char* app_id, account_type_h *account_typ
  * @see account_type_get_label()
  * @see account_type_destroy()
  */
-int account_type_foreach_account_type_from_db(account_type_cb callback, void *user_data);
+ACCOUNT_API int account_type_foreach_account_type_from_db(account_type_cb callback, void *user_data);
 
 /**
  * @brief	Retrieves all account type information with your applicaiton id.
@@ -1475,9 +1580,95 @@ int account_type_foreach_account_type_from_db(account_type_cb callback, void *us
  *
  * @see account_connect()
  */
-int account_type_query_label_by_locale(const char* app_id, const char* locale, char** label);
+ACCOUNT_API int account_type_query_label_by_locale(const char* app_id, const char* locale, char** label);
+
+/**
+ * @brief	Retrieves account type information with provider feature name.
+ *
+ * @param[in] cb_func callback function to retrieve account type information
+ * @param[in] key provider feature value to search account type . e.g) ACCOUNT_SUPPORTS_CAPABILITY_CONTACT or	"http://tizen.org/account/capability/contact"
+ * @param[out] account_type_h handle corresponding provider feature name.
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ * @retval	#ACCOUNT_ERROR_DB_FAILED Database operation failed
+ *
+ * @pre	This function requires an open connection to account service by account_connect().
+ *
+ * @see account_connect()
+ */
+ACCOUNT_API int account_type_query_by_provider_feature(account_type_cb cb_func, const char* key, void* user_data);
+
+/**
+ * @brief	Check account type db whether the given app_id exists.
+ *
+ * @param[in] app_id application id to check
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_RECORD_NOT_FOUND record not found
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER invalid app id
+ *
+ * @pre	This function requires an open connection to account service by account_connect().
+ *
+ * @see account_type_query_by_app_id()
+ */
+ACCOUNT_API int account_type_query_app_id_exist(const char* app_id);
+
+
 
 /* End of account type api  */
+
+/**
+ * @brief	Creates a handle for account event subscription.
+ *
+ * @remarks	@a account_subscribe handle must be released with account_unsubscribe_notification() by you. \n
+ *
+ * @param[in]	account_subscribe	The account subscription handle
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_OUT_OF_MEMORY Out of Memory
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ *
+ * @see account_unsubscribe_notification()
+ * @see account_subscribe_notification()
+ */
+ACCOUNT_API int account_subscribe_create(account_subscribe_h* account_subscribe);
+
+/**
+ * @brief	Start to subscribe account event through the given callback function
+ *
+ * @param[in]	account_subscribe	The account subscription handle
+ * @param[in]	cb_func	When an account is removed from account database. It will be called with event message and account id.
+ * @param[in]	user_data user_data will be delivered to cb_func
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_EVENT_SUBSCRIPTION_FAIL Subscription fail
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ *
+ * @see account_unsubscribe_notification()
+ * @see account_subscribe_notification()
+ */
+ACCOUNT_API int account_subscribe_notification(account_subscribe_h account_subscribe, account_event_cb cb_func, void* user_data);
+
+/**
+ * @brief	Destroys the account subscribe handle and releases all its resources.
+ *
+ * @remarks	@account_unsubscribe_notification must be called when you don't need to subscribe account event \n
+ *
+ * @param[in]	account_subscribe	The account subscription handle
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE	Successful
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ * @retval	#ACCOUNT_ERROR_EVENT_SUBSCRIPTION_FAIL Unsubscription fail
+ *
+ * @see account_create()
+ */
+ACCOUNT_API int account_unsubscribe_notification(account_subscribe_h account_subscribe);
 
 /**
 * @}

@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 #include <account.h>
 #include <glib.h>
 #include <db-util.h>
@@ -30,6 +31,18 @@
 #include <account-private.h>
 #include <vconf.h>
 #include <app.h>
+
+#define ACCOUNT_VERIFY
+#ifdef ACCOUNT_VERIFY
+#include <pkgmgr-info.h>
+#include <aul.h>
+#include <unistd.h>
+
+#define EAS_CMDLINE "/usr/bin/eas-engine"
+#define EMAIL_SERVICE_CMDLINE "/usr/bin/email-service"
+#define ACTIVESYNC_APPID "activesync-ui"
+#define EMAIL_APPID "email-setting-efl"
+#endif
 
 static sqlite3* g_hAccountDB = NULL;
 static int		g_refCntDB = 0;
@@ -42,6 +55,152 @@ static char *_account_query_table_column_text(account_stmt pStmt, int pos);
 static int _account_insert_custom(account_s *account, int account_id);
 static int _account_update_custom(account_s *account, int account_id);
 static int _account_query_custom_by_account_id(account_custom_cb cb_func, int account_id, void *user_data );
+static int _account_type_update_provider_feature(account_type_s *account_type, const char* app_id);
+
+#ifdef ACCOUNT_VERIFY
+int _account_get_current_appid_cb(const pkgmgrinfo_appinfo_h handle, void *user_data)
+{
+	int ret = -1;
+	char* appid = NULL;
+	char* item = NULL;
+	GSList** appid_list = (GSList**)user_data;
+
+	ret = pkgmgrinfo_appinfo_get_appid(handle, &appid);
+	item = _account_get_text(appid);
+	*appid_list = g_slist_append(*appid_list, item);
+
+	return 0;
+}
+
+static inline int __read_proc(const char *path, char *buf, int size)
+{
+	int fd = 0, ret = 0;
+
+	if (buf == NULL || path == NULL) {
+		ACCOUNT_ERROR("path and buffer is mandatory\n");
+		return -1;
+	}
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		ACCOUNT_ERROR("fd open error(%d)\n", fd);
+		return -1;
+	}
+
+	ret = read(fd, buf, size - 1);
+	if (ret <= 0) {
+		ACCOUNT_ERROR("fd read error(%d)\n", fd);
+		close(fd);
+		return -1;
+	} else
+		buf[ret] = 0;
+
+	close(fd);
+
+	return ret;
+}
+
+char *_account_get_proc_cmdline_bypid(int pid)
+{
+	char buf[128];
+	int ret = 0;
+
+	ACCOUNT_SNPRINTF(buf, sizeof(buf), "/proc/%d/cmdline", pid);
+	ret = __read_proc(buf, buf, sizeof(buf));
+	if (ret <= 0) {
+		ACCOUNT_INFO("No proc directory (%d)\n", pid);
+		return NULL;
+	}
+
+	return strdup(buf);
+}
+
+
+static char* _account_get_current_appid()
+{
+	int pid=0, ret=-1;
+	char appid[128]={0,};
+	pkgmgrinfo_appinfo_h ahandle=NULL;
+	char* appid_ret = NULL;
+
+	pid = getpid();
+	ACCOUNT_INFO("pid (%d)\n", pid, ret);
+	ret = aul_app_get_appid_bypid(pid, appid, sizeof(appid));
+	ACCOUNT_INFO("appid (%s) ret(%d)!!!!!!\n", appid, ret);
+
+	/* SLP platform core exception */
+	if(strlen(appid) == 0){
+		char* cmdline = NULL;
+		cmdline = _account_get_proc_cmdline_bypid(pid);
+		ACCOUNT_INFO("cmdline (%s)!!!!!!\n", cmdline);
+		if(!strcmp(cmdline, EAS_CMDLINE)) {
+			appid_ret = _account_get_text(ACTIVESYNC_APPID);
+			return appid_ret;
+		} else if (!strcmp(cmdline, EMAIL_SERVICE_CMDLINE)) {
+			appid_ret = _account_get_text(EMAIL_APPID);
+			return appid_ret;
+		} else {
+			ACCOUNT_ERROR("No app id\n");
+		return NULL;
+	}
+	}
+
+	appid_ret = _account_get_text(appid);
+
+	pkgmgrinfo_appinfo_destroy_appinfo(ahandle);
+	return appid_ret;
+}
+
+static bool _account_verify_permission(const char* appid)
+{
+	bool b_ret = FALSE;
+	int ret=-1;
+	pkgmgrinfo_appinfo_h ahandle=NULL;
+	pkgmgrinfo_pkginfo_h phandle=NULL;
+	char* package_id;
+	GSList* appid_list = NULL;
+	GSList* iter = NULL;
+
+	char* current_appid = _account_get_current_appid();
+
+	if(current_appid == NULL) {
+		// assuming current process is slp core daemon
+		ACCOUNT_DEBUG("current app id is null\n");
+		return FALSE;
+	}
+
+		/* Get app id family which is stored in account database */
+		ret = pkgmgrinfo_appinfo_get_appinfo(appid, &ahandle);
+		ACCOUNT_INFO("ahandle (%p), ret(%x)\n", ahandle, ret);
+		ret = pkgmgrinfo_appinfo_get_pkgid(ahandle, &package_id);
+		ACCOUNT_INFO("package_id (%s), ret(%x)\n", package_id, ret);
+		ret = pkgmgrinfo_pkginfo_get_pkginfo(package_id, &phandle);
+		ACCOUNT_INFO("phandle (%p), ret(%x)\n", package_id, ret);
+
+		ret = pkgmgrinfo_appinfo_get_list(phandle, PMINFO_ALL_APP, _account_get_current_appid_cb, (void *)&appid_list); //==> pkg핸들에 속한 ui-appid 모두 찾음
+		ACCOUNT_INFO("ret(%x)\n", ret);
+
+		/* Compare current app id with the stored app id family */
+		for(iter=appid_list;iter!=NULL;iter=g_slist_next(iter)){
+			char* tmp = (char*)iter->data;
+			if(tmp && !strcmp(tmp, current_appid)) {
+			ACCOUNT_INFO("permission verified appid(%s), current appid(%s)\n", tmp, current_appid);
+				b_ret = TRUE;
+			}
+		ACCOUNT_DEBUG("owner group app id(%s), current appid(%s)\n", tmp, current_appid);
+			_ACCOUNT_FREE(tmp);
+		}
+
+		g_slist_free(appid_list);
+		pkgmgrinfo_pkginfo_destroy_pkginfo(phandle);
+		pkgmgrinfo_appinfo_destroy_appinfo(ahandle);
+
+	_ACCOUNT_FREE(current_appid);
+
+	return b_ret;
+
+}
+#endif
 
 static const char *_account_db_err_msg()
 {
@@ -141,6 +300,42 @@ static int _account_end_transaction(bool is_success)
    return ACCOUNT_ERROR_NONE;
 }
 
+static bool _account_check_add_more_account(const char* app_id)
+{
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	int 			rc = 0;
+
+	ACCOUNT_RETURN_VAL((app_id != 0), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("APP ID IS NULL"));
+	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
+
+	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
+
+	ACCOUNT_DEBUG("app id (%s)\n", app_id);
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT COUNT(*) FROM %s WHERE AppId = '%s' and MultipleAccountSupport = 1", ACCOUNT_TYPE_TABLE, app_id);
+	rc = _account_get_record_count(query);
+
+	ACCOUNT_DEBUG("app id (%s) supports multiple account. rc(%d)\n", app_id, rc);
+
+	/* multiple account support case */
+	if(rc > 0) {
+		ACCOUNT_DEBUG("app id (%s) supports multiple account. rc(%d)\n", app_id, rc);
+		return TRUE;
+	}
+
+	/* multiple account not support case */
+	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT COUNT(*) FROM %s WHERE package_name = '%s'", ACCOUNT_TABLE, app_id);
+	rc = _account_get_record_count(query);
+
+	if(rc <= 0) {
+		ACCOUNT_DEBUG("app id (%s) supports single account. and there is no account of the app id\n", app_id);
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
 static int _account_create_all_tables(void)
 {
 	int rc = -1;
@@ -211,6 +406,18 @@ static int _account_create_all_tables(void)
 		ACCOUNT_RETURN_VAL((SQLITE_OK == rc), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_execute_query(%s) failed(%d, %s).\n", query, rc, _account_db_err_msg()));
 	}
 
+	/* Create account feature table */
+	ACCOUNT_MEMSET(query, 0, sizeof(query));
+	ACCOUNT_SNPRINTF(query, sizeof(query), "select count(*) from sqlite_master where name in ('%s')", PROVIDER_FEATURE_TABLE);
+	rc = _account_get_record_count(query);
+	if (rc <= 0) {
+		ACCOUNT_MEMSET(query, 0, sizeof(query));
+		ACCOUNT_SNPRINTF(query, sizeof(query),  PROVIDER_FEATURE_SCHEMA, PROVIDER_FEATURE_TABLE);
+		ACCOUNT_INFO("Create %s table", PROVIDER_FEATURE_TABLE);
+		rc = _account_execute_query(query);
+		ACCOUNT_RETURN_VAL((SQLITE_OK == rc), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_execute_query(%s) failed(%d, %s).\n", query, rc, _account_db_err_msg()));
+	}
+
 	return error_code;
 }
 
@@ -222,11 +429,14 @@ static bool _account_check_is_all_table_exists()
 
 	ACCOUNT_VERBOSE("_account_check_is_all_table_exists");
 
-	ACCOUNT_SNPRINTF(query, sizeof(query), "select count(*) from sqlite_master where name in ('%s', '%s')",
-			ACCOUNT_TABLE, CAPABILITY_TABLE);
+	ACCOUNT_SNPRINTF(query, sizeof(query), "select count(*) from sqlite_master where name in ('%s', '%s', '%s', '%s', '%s', '%s')",
+			ACCOUNT_TABLE, CAPABILITY_TABLE, ACCOUNT_CUSTOM_TABLE, ACCOUNT_TYPE_TABLE, LABEL_TABLE, PROVIDER_FEATURE_TABLE);
 	rc = _account_get_record_count(query);
+
+	ACCOUNT_DEBUG("Table count = %d\n", rc);
+
 	if (rc != ACCOUNT_TABLE_TOTAL_COUNT) {
-		ACCOUNT_INFO("Table count is not matched rc=%d\n", rc);
+		ACCOUNT_ERROR("Table count is not matched rc=%d\n", rc);
 		return FALSE;
 	}
 
@@ -238,7 +448,6 @@ static bool _account_check_is_all_table_exists()
 static int _account_db_open(void)
 {
 	int 	rc = 0;
-	bool is_success = false;
 	char query[ACCOUNT_SQL_LEN_MAX] = {0, };
 
 	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
@@ -248,11 +457,9 @@ static int _account_db_open(void)
 		ACCOUNT_RETURN_VAL((rc == SQLITE_OK), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected. rc : %d", rc));
 
 		g_refCntDB++;
-		is_success = true;
 		ACCOUNT_INFO("_account_db_open: The database connected. refcnt=%d ", g_refCntDB);
 	} else {
 		g_refCntDB++;
-		is_success = true;
 		ACCOUNT_INFO("The database already connected. refcnt=%d ", g_refCntDB);
 	}
 
@@ -306,7 +513,7 @@ static int _account_connect(void)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_connect (void)
+ACCOUNT_API int account_connect (void)
 {
 	return _account_connect();
 }
@@ -324,7 +531,7 @@ static int _account_disconnect(void)
 	return error_code;
 }
 
-int account_disconnect (void)
+ACCOUNT_API int account_disconnect (void)
 {
 	return _account_disconnect();
 }
@@ -374,6 +581,7 @@ static int _account_free_account_items(account_s *data)
 	_ACCOUNT_FREE(data->source);
 	_ACCOUNT_FREE(data->package_name);
 	_ACCOUNT_FREE(data->domain_name);
+	_ACCOUNT_FREE(data->access_token);
 
 	int i;
 	for(i=0;i<USER_TXT_CNT;i++)
@@ -429,8 +637,8 @@ static gboolean _account_check_duplicated(account_s *data)
 
 	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
 
-	ACCOUNT_SNPRINTF(query, sizeof(query), "select count(*) from %s where user_name='%s' and domain_name='%s'"
-			, ACCOUNT_TABLE, data->user_name, data->domain_name);
+	ACCOUNT_SNPRINTF(query, sizeof(query), "select count(*) from %s where user_name='%s' and package_name='%s'"
+			, ACCOUNT_TABLE, data->user_name, data->package_name);
 
 	count = _account_get_record_count(query);
 	if (count > 0) {
@@ -591,15 +799,54 @@ static int _account_execute_insert_query(account_s *account)
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
 
+#ifdef ACCOUNT_VERIFY
+	char* 			appid = NULL;
+	appid = _account_get_current_appid();
+
+	if(appid) {
+		//replace appid to account->package_name
+		_ACCOUNT_FREE(account->package_name);
+		account->package_name = _account_get_text(appid);
+		_ACCOUNT_FREE(appid);
+	}else {
+		// API caller cannot be recognized
+		ACCOUNT_ERROR("APP ID not detectable!\n");
+		return ACCOUNT_ERROR_PERMISSION_DENIED;
+	}
+#else
 	if (!account->package_name) {
 		ACCOUNT_ERROR("Package name is mandetory field, it can not be NULL!!!!\n");
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
+#endif
+
+	/* check whether app id exist in account type db */
 
 	if (!account->user_name && !account->display_name && !account->email_address) {
 		ACCOUNT_ERROR("Mandetory fields is NULL. At least one field is required among username, display name, email address\n");
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
+
+	/* Check account own icon existence */
+	if(!account->icon_path) {
+		char* temptxt = NULL;
+		account_type_h account_type = NULL;
+		error_code = account_type_create(&account_type);
+		error_code = account_type_query_by_app_id((const char*)account->package_name, &account_type);
+		error_code = account_type_get_icon_path(account_type, &temptxt);
+		if (error_code != ACCOUNT_ERROR_NONE) {
+				ACCOUNT_ERROR("account_type_get_icon_path: Failed \n");
+		} else if (temptxt && strlen(temptxt)) {
+			ACCOUNT_DEBUG("icon path (%s) app_id(%s) \n", temptxt, account->package_name);
+			account->icon_path = _account_get_text(temptxt);
+		} else {
+			ACCOUNT_DEBUG("account_get_icon_path: returned NULL \n");
+		}
+		_ACCOUNT_FREE(temptxt);
+		error_code = account_type_destroy(account_type);
+	}
+
+	/* End of Check account own icon existence */
 
 	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
 	ACCOUNT_SNPRINTF(query, sizeof(query), "INSERT INTO %s( user_name, email_address , display_name , icon_path , source , package_name , "
@@ -653,17 +900,18 @@ static int _account_insert_capability(account_s *account, int account_id)
 	for (iter = account->capablity_list; iter != NULL; iter = g_slist_next(iter)) {
 		int rc, ret;
 		count = 1;
-		ACCOUNT_MEMSET(query, 0x00, sizeof(query));
-		ACCOUNT_SNPRINTF(query, sizeof(query), "INSERT INTO %s(key, value, package_name, user_name, account_id) VALUES "
-				"(?, ?, ?, ?, ?) ", CAPABILITY_TABLE);
-
-		hstmt = _account_prepare_query(query);
-
-		ACCOUNT_RETURN_VAL((hstmt != NULL), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_prepare_query() failed(%s).\n", _account_db_err_msg()));
 
 		account_capability_s* cap_data = NULL;
 		cap_data = (account_capability_s*)iter->data;
-		ACCOUNT_VERBOSE("cap_data->type = %d, cap_data->value = %d \n", cap_data->type, cap_data->value);
+
+		ACCOUNT_VERBOSE("cap_data->type = %s, cap_data->value = %d \n", cap_data->type, cap_data->value);
+
+		ACCOUNT_MEMSET(query, 0x00, sizeof(query));
+		ACCOUNT_SNPRINTF(query, sizeof(query), "INSERT INTO %s(key, value, package_name, user_name, account_id) VALUES "
+				"(?, ?, ?, ?, ?) ", CAPABILITY_TABLE);
+		hstmt = _account_prepare_query(query);
+
+		ACCOUNT_RETURN_VAL((hstmt != NULL), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_prepare_query() failed(%s).\n", _account_db_err_msg()));
 
 		ret = _account_query_bind_text(hstmt, count++, cap_data->type);
 		ACCOUNT_RETURN_VAL((ret == ACCOUNT_ERROR_NONE), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("Text binding fail"));
@@ -870,7 +1118,7 @@ static char *_account_query_table_column_text(account_stmt pStmt, int pos)
 	return (char *)sqlite3_column_text(pStmt, pos);
 }
 
-static void _account_db_data_to_text(char *textbuf, char **output)
+static void _account_db_data_to_text(const char *textbuf, char **output)
 {
 	if (textbuf && strlen(textbuf)>0) {
 		if (*output) {
@@ -878,8 +1126,6 @@ static void _account_db_data_to_text(char *textbuf, char **output)
 			*output = NULL;
 		}
 		*output = strdup(textbuf);
-	} else {
-		ACCOUNT_WARNING("_account_db_data_to_text : no text");
 	}
 }
 
@@ -998,7 +1244,7 @@ bool _account_get_capability_text_cb(const char* capability_type, account_capabi
 
 	data->capablity_list = g_slist_append(data->capablity_list, (gpointer)cap_data);
 
-	ACCOUNT_VERBOSE("_account_get_capability_text_cb :: %d\n", capability_type);
+	ACCOUNT_VERBOSE("_account_get_capability_text_cb :: %s\n", capability_type);
 
 	return TRUE;
 }
@@ -1038,6 +1284,156 @@ static char *_account_get_text(const char *text_data)
 	return text_value;
 }
 
+static int _account_compare_old_record_by_user_name(account_s *new_account, const char* user_name, const char* package_name)
+{
+	int				error_code = ACCOUNT_ERROR_NONE;
+	account_stmt 	hstmt = NULL;
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	int				rc = 0;
+	account_s *old_account = NULL;
+
+	ACCOUNT_RETURN_VAL((new_account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT IS NULL"));
+	ACCOUNT_RETURN_VAL((user_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("USER NAME IS NULL"));
+	ACCOUNT_RETURN_VAL((package_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("PACKAGE NAME IS NULL"));
+	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
+
+	old_account = (account_s*)calloc(1, sizeof(account_s));
+	if(!old_account) {
+		ACCOUNT_FATAL("Memory alloc fail\n");
+		return ACCOUNT_ERROR_OUT_OF_MEMORY;
+	}
+
+	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT * FROM %s WHERE user_name = '%s' and package_name='%s'", ACCOUNT_TABLE, user_name, package_name);
+	hstmt = _account_prepare_query(query);
+
+	rc = _account_query_step(hstmt);
+	ACCOUNT_CATCH_ERROR(rc == SQLITE_ROW, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found.\n"));
+
+	while (rc == SQLITE_ROW) {
+		_account_convert_column_to_account(hstmt, old_account);
+		ACCOUNT_VERBOSE("get account info by id %p\n", old_account);
+		rc = _account_query_step(hstmt);
+	}
+
+	_account_query_finalize(hstmt);
+	hstmt = NULL;
+
+	// get capability
+	error_code = account_query_capability_by_account_id(_account_get_capability_text_cb, old_account->id, (void*)old_account);
+	ACCOUNT_CATCH_ERROR((error_code == ACCOUNT_ERROR_NONE), {}, error_code, ("account_query_capability_by_account_id error"));
+
+	// get custom text
+	error_code = _account_query_custom_by_account_id(_account_get_custom_text_cb, old_account->id, (void*)old_account);
+	ACCOUNT_CATCH_ERROR((error_code == ACCOUNT_ERROR_NONE), {}, error_code, ("_account_query_custom_by_account_id error"));
+
+	// compare
+	new_account->id = old_account->id;
+
+	//user name
+	if(!new_account->user_name) {
+		if(old_account->user_name)
+			new_account->user_name = _account_get_text(old_account->user_name);
+	}
+
+	// display name
+	if(!new_account->display_name) {
+		if(old_account->display_name)
+			new_account->display_name = _account_get_text(old_account->display_name);
+	}
+
+	// email address
+	if(!new_account->email_address) {
+		if(old_account->email_address)
+			new_account->email_address = _account_get_text(old_account->email_address);
+	}
+
+	// domain name
+	if(!new_account->domain_name) {
+		if(old_account->domain_name)
+			new_account->domain_name = _account_get_text(old_account->domain_name);
+	}
+
+	// icon path
+	if(!new_account->icon_path) {
+		if(old_account->icon_path)
+			new_account->icon_path = _account_get_text(old_account->icon_path);
+	}
+
+	// source
+	if(!new_account->source) {
+		if(old_account->source)
+			new_account->source = _account_get_text(old_account->source);
+	}
+
+#ifndef ACCOUNT_VERIFY
+	// package name
+	if(!new_account->package_name) {
+		if(old_account->package_name)
+			new_account->package_name = _account_get_text(old_account->package_name);
+	}
+#endif
+
+	// access token
+	if(!new_account->access_token) {
+		if(old_account->access_token)
+			new_account->access_token = _account_get_text(old_account->access_token);
+	}
+
+	// user text
+	int i;
+	for(i=0;i<USER_TXT_CNT;i++) {
+		if(!new_account->user_data_txt[i]) {
+			if(old_account->user_data_txt[i])
+				new_account->user_data_txt[i] = _account_get_text(old_account->user_data_txt[i]);
+		}
+	}
+
+	// auth type
+	if(new_account->auth_type == ACCOUNT_AUTH_TYPE_INVALID) {
+		new_account->auth_type = old_account->auth_type;
+	}
+
+	//secret
+	if(new_account->secret== ACCOUNT_SECRECY_INVALID) {
+		new_account->secret = old_account->secret;
+	}
+
+	// sync support
+	if(new_account->sync_support == ACCOUNT_SYNC_INVALID) {
+		new_account->sync_support = old_account->sync_support;
+	}
+
+	// user int
+	for(i=0;i<USER_INT_CNT;i++) {
+		if(new_account->user_data_int[i] == 0) {
+				new_account->user_data_int[i] = old_account->user_data_int[i];
+		}
+	}
+
+	// capability
+
+	// user custom table
+
+
+
+	CATCH:
+		if (hstmt != NULL) {
+			_account_query_finalize(hstmt);
+			hstmt = NULL;
+		}
+
+		if (old_account) {
+			_account_free_account_items(old_account);
+			_ACCOUNT_FREE(old_account);
+		}
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+
+
 static int _account_update_account_by_user_name(account_s *account, char *user_name, char *package_name)
 {
 	int				rc = 0, binding_count = 0, count = 0;
@@ -1048,10 +1444,13 @@ static int _account_update_account_by_user_name(account_s *account, char *user_n
 	ACCOUNT_RETURN_VAL((user_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("user_name is NULL.\n"));
 	ACCOUNT_RETURN_VAL((package_name!= NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("package_name is NULL.\n"));
 
+	_account_compare_old_record_by_user_name(account, user_name, package_name);
+
 	if (!account->user_name && !account->display_name && !account->email_address) {
 		ACCOUNT_ERROR("One field should be set among user name, display name, email address\n");
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
+
 
 	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT COUNT(*) FROM %s WHERE user_name='%s' and package_name='%s'"
 			, ACCOUNT_TABLE, user_name, package_name);
@@ -1086,12 +1485,16 @@ static int _account_update_account_by_user_name(account_s *account, char *user_n
 	/*update capability*/
 	error_code = _account_update_capability_by_user_name(account, user_name, package_name);
 
+	/* update custom */
+	error_code = _account_update_custom(account, account->id);
+
 	return error_code;
 }
 
-int account_insert_to_db(account_h account, int *account_id)
+ACCOUNT_API int account_insert_to_db(account_h account, int *account_id)
 {
 	int		error_code = ACCOUNT_ERROR_NONE;
+	int 	ret_transaction = 0;
 
 	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
@@ -1101,30 +1504,82 @@ int account_insert_to_db(account_h account, int *account_id)
 
 	pthread_mutex_lock(&account_mutex);
 
+	/* transaction control required*/
+	ret_transaction = _account_begin_transaction();
+
+	if (ret_transaction != ACCOUNT_ERROR_NONE) {
+		ACCOUNT_ERROR("account_delete:_account_begin_transaction fail %d\n", ret_transaction);
+		pthread_mutex_unlock(&account_mutex);
+		return ret_transaction;
+	}
+
 	if (_account_check_duplicated(data)) {
-		error_code = ACCOUNT_ERROR_DUPLICATED;
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("Duplicated, rollback insert query(%x)!!!!\n", ret_transaction);
+		*account_id = -1;
+		pthread_mutex_unlock(&account_mutex);
+		return ACCOUNT_ERROR_DUPLICATED;
 	} else {
 		*account_id = _account_get_next_sequence(ACCOUNT_TABLE);
 
+		if(account_type_query_app_id_exist(data->package_name) != ACCOUNT_ERROR_NONE) {
+			ret_transaction = _account_end_transaction(FALSE);
+			ACCOUNT_ERROR("App id is not registered in account type DB, transaction ret (%x)!!!!\n", ret_transaction);
+			pthread_mutex_unlock(&account_mutex);
+			return ACCOUNT_ERROR_NOT_REGISTERED_PROVIDER;
+		}
+
+		if(!_account_check_add_more_account(data->package_name)) {
+			ret_transaction = _account_end_transaction(FALSE);
+			ACCOUNT_ERROR("No more account cannot be added, transaction ret (%x)!!!!\n", ret_transaction);
+			pthread_mutex_unlock(&account_mutex);
+			return ACCOUNT_ERROR_NOT_ALLOW_MULTIPLE;
+		}
+
 		error_code = _account_execute_insert_query(data);
 
-		if (error_code != ACCOUNT_ERROR_NONE)
+		if (error_code != ACCOUNT_ERROR_NONE) {
+			ret_transaction = _account_end_transaction(FALSE);
+			ACCOUNT_ERROR("INSERT account fail, rollback insert query(%x)!!!!\n", ret_transaction);
 			*account_id = -1;
+			pthread_mutex_unlock(&account_mutex);
+			return error_code;
+		}
 	}
 
 	ACCOUNT_VERBOSE( "_account_execute_insert_query, insert error_code : %d", error_code);
 
-	_account_insert_capability(data, *account_id);
-	_account_insert_custom(data, *account_id);
+	error_code = _account_insert_capability(data, *account_id);
+	if (error_code != ACCOUNT_ERROR_NONE) {
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("INSERT capability fail, rollback insert capability query(%x)!!!!\n", ret_transaction);
+		*account_id = -1;
+		pthread_mutex_unlock(&account_mutex);
+		return error_code;
+	}
+
+	error_code = _account_insert_custom(data, *account_id);
+	if (error_code != ACCOUNT_ERROR_NONE) {
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("INSERT custom fail, rollback insert capability query(%x)!!!!\n", ret_transaction);
+		*account_id = -1;
+		pthread_mutex_unlock(&account_mutex);
+		return error_code;
+	}
 
 	pthread_mutex_unlock(&account_mutex);
-	_account_insert_delete_update_notification_send(ACCOUNT_NOTI_NAME_INSERT);
+
+	char buf[64]={0,};
+	ACCOUNT_SNPRINTF(buf, sizeof(buf), "%s:%d", ACCOUNT_NOTI_NAME_INSERT, *account_id);
+	_account_insert_delete_update_notification_send(buf);
+
+	_account_end_transaction(TRUE);
 
 	return ACCOUNT_ERROR_NONE;
 
 }
 
-int account_create(account_h *account)
+ACCOUNT_API int account_create(account_h *account)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account is NULL.\n", __FUNCTION__, __LINE__);
@@ -1152,7 +1607,7 @@ int account_create(account_h *account)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_user_name(account_h account, const char *user_name)
+ACCOUNT_API int account_set_user_name(account_h account, const char *user_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1174,7 +1629,7 @@ int account_set_user_name(account_h account, const char *user_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_display_name(account_h account, const char *display_name)
+ACCOUNT_API int account_set_display_name(account_h account, const char *display_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1196,7 +1651,7 @@ int account_set_display_name(account_h account, const char *display_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_email_address(account_h account, const char *email_address)
+ACCOUNT_API int account_set_email_address(account_h account, const char *email_address)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1218,7 +1673,7 @@ int account_set_email_address(account_h account, const char *email_address)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_icon_path(account_h account, const char *icon_path)
+ACCOUNT_API int account_set_icon_path(account_h account, const char *icon_path)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1240,7 +1695,7 @@ int account_set_icon_path(account_h account, const char *icon_path)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_source(account_h account, const char *source)
+ACCOUNT_API int account_set_source(account_h account, const char *source)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1261,7 +1716,7 @@ int account_set_source(account_h account, const char *source)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_package_name(account_h account, const char *package_name)
+ACCOUNT_API int account_set_package_name(account_h account, const char *package_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1283,7 +1738,7 @@ int account_set_package_name(account_h account, const char *package_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_domain_name(account_h account, const char *domain_name)
+ACCOUNT_API int account_set_domain_name(account_h account, const char *domain_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1304,7 +1759,7 @@ int account_set_domain_name(account_h account, const char *domain_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_access_token(account_h account, const char *access_token)
+ACCOUNT_API int account_set_access_token(account_h account, const char *access_token)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1326,7 +1781,7 @@ int account_set_access_token(account_h account, const char *access_token)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_user_text(account_h account, int index, const char *user_txt)
+ACCOUNT_API int account_set_user_text(account_h account, int index, const char *user_txt)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1352,7 +1807,7 @@ int account_set_user_text(account_h account, int index, const char *user_txt)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_custom(account_h account, const char* key, const char* value)
+ACCOUNT_API int account_set_custom(account_h account, const char* key, const char* value)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1405,7 +1860,7 @@ int account_set_custom(account_h account, const char* key, const char* value)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_auth_type(account_h account, const account_auth_type_e auth_type)
+ACCOUNT_API int account_set_auth_type(account_h account, const account_auth_type_e auth_type)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("(%s)-(%d) account handle is NULL.\n",  __FUNCTION__, __LINE__));
 
@@ -1421,7 +1876,7 @@ int account_set_auth_type(account_h account, const account_auth_type_e auth_type
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_secret(account_h account, const account_secrecy_state_e secret)
+ACCOUNT_API int account_set_secret(account_h account, const account_secrecy_state_e secret)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("(%s)-(%d) account handle is NULL.\n",	__FUNCTION__, __LINE__));
 
@@ -1437,7 +1892,7 @@ int account_set_secret(account_h account, const account_secrecy_state_e secret)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_sync_support(account_h account, const account_sync_state_e sync_support)
+ACCOUNT_API int account_set_sync_support(account_h account, const account_sync_state_e sync_support)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("(%s)-(%d) account handle is NULL.\n",	__FUNCTION__, __LINE__));
 
@@ -1453,7 +1908,7 @@ int account_set_sync_support(account_h account, const account_sync_state_e sync_
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_user_int(account_h account, int index, const int user_int)
+ACCOUNT_API int account_set_user_int(account_h account, int index, const int user_int)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1472,7 +1927,7 @@ int account_set_user_int(account_h account, int index, const int user_int)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_set_capability(account_h account, const char* capability_type, account_capability_state_e capability_value)
+ACCOUNT_API int account_set_capability(account_h account, const char* capability_type, account_capability_state_e capability_value)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("account handle is null"));
 	ACCOUNT_RETURN_VAL((capability_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("capability_type is null"));
@@ -1513,7 +1968,7 @@ int account_set_capability(account_h account, const char* capability_type, accou
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_user_name(account_h account, char **user_name)
+ACCOUNT_API int account_get_user_name(account_h account, char **user_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1533,7 +1988,7 @@ int account_get_user_name(account_h account, char **user_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_display_name(account_h account, char **display_name)
+ACCOUNT_API int account_get_display_name(account_h account, char **display_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1554,7 +2009,7 @@ int account_get_display_name(account_h account, char **display_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_email_address(account_h account,char **email_address)
+ACCOUNT_API int account_get_email_address(account_h account,char **email_address)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1575,7 +2030,7 @@ int account_get_email_address(account_h account,char **email_address)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int  account_get_icon_path(account_h account, char **icon_path)
+ACCOUNT_API int  account_get_icon_path(account_h account, char **icon_path)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1596,7 +2051,7 @@ int  account_get_icon_path(account_h account, char **icon_path)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_source(account_h account, char **source)
+ACCOUNT_API int account_get_source(account_h account, char **source)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1617,7 +2072,7 @@ int account_get_source(account_h account, char **source)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_package_name(account_h account, char **package_name)
+ACCOUNT_API int account_get_package_name(account_h account, char **package_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1638,7 +2093,7 @@ int account_get_package_name(account_h account, char **package_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_domain_name(account_h account, char **domain_name)
+ACCOUNT_API int account_get_domain_name(account_h account, char **domain_name)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1659,7 +2114,7 @@ int account_get_domain_name(account_h account, char **domain_name)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_access_token(account_h account, char **access_token)
+ACCOUNT_API int account_get_access_token(account_h account, char **access_token)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1680,7 +2135,7 @@ int account_get_access_token(account_h account, char **access_token)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_user_text(account_h account, int user_text_index, char **text)
+ACCOUNT_API int account_get_user_text(account_h account, int user_text_index, char **text)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1702,7 +2157,7 @@ int account_get_user_text(account_h account, int user_text_index, char **text)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_auth_type(account_h account, account_auth_type_e *auth_type)
+ACCOUNT_API int account_get_auth_type(account_h account, account_auth_type_e *auth_type)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1720,7 +2175,7 @@ int account_get_auth_type(account_h account, account_auth_type_e *auth_type)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_secret(account_h account, account_secrecy_state_e *secret)
+ACCOUNT_API int account_get_secret(account_h account, account_secrecy_state_e *secret)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1738,7 +2193,7 @@ int account_get_secret(account_h account, account_secrecy_state_e *secret)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_sync_support(account_h account, account_sync_state_e *sync_support)
+ACCOUNT_API int account_get_sync_support(account_h account, account_sync_state_e *sync_support)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1756,7 +2211,7 @@ int account_get_sync_support(account_h account, account_sync_state_e *sync_suppo
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_account_id(account_h account, int *account_id)
+ACCOUNT_API int account_get_account_id(account_h account, int *account_id)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1774,7 +2229,7 @@ int account_get_account_id(account_h account, int *account_id)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_user_int(account_h account, int user_int_index, int *integer)
+ACCOUNT_API int account_get_user_int(account_h account, int user_int_index, int *integer)
 {
 	if (!account) {
 		ACCOUNT_ERROR("(%s)-(%d) account handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -1795,7 +2250,7 @@ int account_get_user_int(account_h account, int user_int_index, int *integer)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_capability(account_h account, const char* capability_type, account_capability_state_e* capability_value)
+ACCOUNT_API int account_get_capability(account_h account, const char* capability_type, account_capability_state_e* capability_value)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
 	ACCOUNT_RETURN_VAL((capability_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("capability_type is NULL"));
@@ -1820,7 +2275,7 @@ int account_get_capability(account_h account, const char* capability_type, accou
 	return ACCOUNT_ERROR_RECORD_NOT_FOUND;
 }
 
-int account_get_capability_all(account_h account, capability_cb cb_func, void *user_data)
+ACCOUNT_API int account_get_capability_all(account_h account, capability_cb cb_func, void *user_data)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
 	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO CALLBACK FUNCTION"));
@@ -1841,7 +2296,7 @@ int account_get_capability_all(account_h account, capability_cb cb_func, void *u
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_get_custom(account_h account, const char* key, char** value)
+ACCOUNT_API int account_get_custom(account_h account, const char* key, char** value)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
 	ACCOUNT_RETURN_VAL((key != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO KEY TO REQUEST"));
@@ -1869,7 +2324,7 @@ int account_get_custom(account_h account, const char* key, char** value)
 	return ACCOUNT_ERROR_RECORD_NOT_FOUND;
 }
 
-int account_get_custom_all(account_h account, account_custom_cb cb_func, void* user_data)
+ACCOUNT_API int account_get_custom_all(account_h account, account_custom_cb cb_func, void* user_data)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
 	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO CALLBACK FUNCTION"));
@@ -1895,7 +2350,7 @@ int account_get_custom_all(account_h account, account_custom_cb cb_func, void* u
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_query_capability_by_account_id(capability_cb cb_func, int account_id, void *user_data )
+ACCOUNT_API int account_query_capability_by_account_id(capability_cb cb_func, int account_id, void *user_data )
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -1957,9 +2412,6 @@ CATCH:
 	return error_code;
 }
 
-#define URUSA_TEST
-
-#ifdef URUSA_TEST
 static int _account_compare_old_record(account_s *new_account, int account_id)
 {
 	int				error_code = ACCOUNT_ERROR_NONE;
@@ -1993,12 +2445,15 @@ static int _account_compare_old_record(account_s *new_account, int account_id)
 
 	// get capability
 	error_code = account_query_capability_by_account_id(_account_get_capability_text_cb, old_account->id, (void*)old_account);
+	ACCOUNT_CATCH_ERROR((error_code == ACCOUNT_ERROR_NONE), {}, error_code, ("account_query_capability_by_account_id error"));
 
 	// get custom text
 	error_code = _account_query_custom_by_account_id(_account_get_custom_text_cb, old_account->id, (void*)old_account);
-
+	ACCOUNT_CATCH_ERROR((error_code == ACCOUNT_ERROR_NONE), {}, error_code, ("_account_query_custom_by_account_id error"));
 
 	// compare
+
+	new_account->id = old_account->id;
 
 	//user name
 	if(!new_account->user_name) {
@@ -2018,6 +2473,12 @@ static int _account_compare_old_record(account_s *new_account, int account_id)
 			new_account->email_address = _account_get_text(old_account->email_address);
 	}
 
+	// domain name
+	if(!new_account->domain_name) {
+		if(old_account->domain_name)
+			new_account->domain_name = _account_get_text(old_account->domain_name);
+	}
+
 	// icon path
 	if(!new_account->icon_path) {
 		if(old_account->icon_path)
@@ -2030,11 +2491,13 @@ static int _account_compare_old_record(account_s *new_account, int account_id)
 			new_account->source = _account_get_text(old_account->source);
 	}
 
+#ifndef ACCOUNT_VERIFY
 	// package name
 	if(!new_account->package_name) {
 		if(old_account->package_name)
 			new_account->package_name = _account_get_text(old_account->package_name);
 	}
+#endif
 
 	// access token
 	if(!new_account->access_token) {
@@ -2092,23 +2555,35 @@ static int _account_compare_old_record(account_s *new_account, int account_id)
 
 	return ACCOUNT_ERROR_NONE;
 }
-#endif
 
 static int _account_update_account(account_s *account, int account_id)
 {
 	int				rc = 0, binding_count =0;
 	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
-	int				error_code = ACCOUNT_ERROR_NONE, count=0;
+	int				error_code = ACCOUNT_ERROR_NONE, count=0, ret_transaction = 0;
 	account_stmt 	hstmt = NULL;
 
-
-#ifdef URUSA_TEST
 	_account_compare_old_record(account, account_id);
+
+#ifdef ACCOUNT_VERIFY
+
+	/* Check permission of requested appid */
+	if(!_account_verify_permission(account->package_name)) {
+		ACCOUNT_ERROR("No permission to update\n");
+		return ACCOUNT_ERROR_PERMISSION_DENIED;
+	}
+
 #endif
 
 	if (!account->package_name) {
 		ACCOUNT_ERROR("Package name is mandetory field, it can not be NULL!!!!\n");
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
+	}
+
+
+	if(account_type_query_app_id_exist(account->package_name) != ACCOUNT_ERROR_NONE) {
+		ACCOUNT_ERROR("App id is not registered in account type DB!!!!\n");
+		return ACCOUNT_ERROR_NOT_REGISTERED_PROVIDER;
 	}
 
 	if (!account->user_name && !account->display_name && !account->email_address) {
@@ -2126,6 +2601,9 @@ static int _account_update_account(account_s *account, int account_id)
 		return ACCOUNT_ERROR_RECORD_NOT_FOUND;
 	}
 
+	/* transaction control required*/
+	ret_transaction = _account_begin_transaction();
+
 	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
 	ACCOUNT_SNPRINTF(query, sizeof(query), "UPDATE %s SET user_name=?, email_address =?, display_name =?, "
 			"icon_path =?, source =?, package_name =? , access_token =?, domain_name =?, auth_type =?, secret =?, sync_support =?,"
@@ -2133,7 +2611,7 @@ static int _account_update_account(account_s *account, int account_id)
 			"int_custom0=?, int_custom1=?, int_custom2=?, int_custom3=?, int_custom4=? WHERE _id=? ", ACCOUNT_TABLE);
 
 	hstmt = _account_prepare_query(query);
-	ACCOUNT_RETURN_VAL((hstmt != NULL), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_svc_query_prepare() failed(%s).\n", _account_db_err_msg()));
+	ACCOUNT_RETURN_VAL((hstmt != NULL), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_svc_query_prepare() failed(%s)(%x).\n", _account_db_err_msg(), _account_end_transaction(FALSE)));
 
 	binding_count = _account_convert_account_to_sql(account, hstmt, query);
 	_account_query_bind_int(hstmt, binding_count++, account_id);
@@ -2148,14 +2626,27 @@ static int _account_update_account(account_s *account, int account_id)
 
 	/*update capability*/
 	error_code = _account_update_capability(account, account_id);
+	if(error_code != ACCOUNT_ERROR_NONE && error_code!= ACCOUNT_ERROR_RECORD_NOT_FOUND){
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("update capability Failed, trying to roll back(%x) !!!\n", ret_transaction);
+		return error_code;
+	}
 
 	/* update custom */
 	error_code = _account_update_custom(account, account_id);
+	if(error_code != ACCOUNT_ERROR_NONE && error_code!= ACCOUNT_ERROR_RECORD_NOT_FOUND){
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("update capability Failed, trying to roll back(%x) !!!\n", ret_transaction);
+		return error_code;
+	}
+
+	ret_transaction = _account_end_transaction(TRUE);
+	ACCOUNT_DEBUG("update capability success, trying to commit(%x) !!!\n", ret_transaction);
 
 	return error_code;
 }
 
-int account_update_to_db_by_id(const account_h account, int account_id)
+ACCOUNT_API int account_update_to_db_by_id(const account_h account, int account_id)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("DATA IS NULL"));
 	ACCOUNT_RETURN_VAL((account_id > 0), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("Account id is not valid"));
@@ -2173,12 +2664,15 @@ int account_update_to_db_by_id(const account_h account, int account_id)
 	}
 
 	pthread_mutex_unlock(&account_mutex);
-	_account_insert_delete_update_notification_send(ACCOUNT_NOTI_NAME_UPDATE);
+
+	char buf[64]={0,};
+	ACCOUNT_SNPRINTF(buf, sizeof(buf), "%s:%d", ACCOUNT_NOTI_NAME_UPDATE, account_id);
+	_account_insert_delete_update_notification_send(buf);
 
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_update_to_db_by_user_name(account_h account, const char *user_name, const char *package_name)
+ACCOUNT_API int account_update_to_db_by_user_name(account_h account, const char *user_name, const char *package_name)
 {
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("DATA IS NULL"));
 	ACCOUNT_RETURN_VAL((user_name != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("USER NAME IS NULL"));
@@ -2193,12 +2687,15 @@ int account_update_to_db_by_user_name(account_h account, const char *user_name, 
 	error_code = _account_update_account_by_user_name(data, (char*)user_name, (char*)package_name);
 
 	pthread_mutex_unlock(&account_mutex);
-	_account_insert_delete_update_notification_send(ACCOUNT_NOTI_NAME_UPDATE);
 
-	return ACCOUNT_ERROR_NONE;
+	char buf[64]={0,};
+	ACCOUNT_SNPRINTF(buf, sizeof(buf), "%s:%d", ACCOUNT_NOTI_NAME_UPDATE, data->id);
+	_account_insert_delete_update_notification_send(buf);
+
+	return error_code;
 }
 
-int account_foreach_account_from_db(account_cb callback, void *user_data)
+ACCOUNT_API int account_foreach_account_from_db(account_cb callback, void *user_data)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -2271,7 +2768,7 @@ CATCH:
 	return error_code;
 }
 
-int account_update_sync_status_by_id(int account_db_id, const account_sync_state_e sync_status)
+ACCOUNT_API int account_update_sync_status_by_id(int account_db_id, const account_sync_state_e sync_status)
 {
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
@@ -2314,7 +2811,9 @@ int account_update_sync_status_by_id(int account_db_id, const account_sync_state
 
 	_account_query_finalize(hstmt);
 
-	_account_insert_delete_update_notification_send(ACCOUNT_NOTI_NAME_SYNC_UPDATE);
+	char buf[64]={0,};
+	ACCOUNT_SNPRINTF(buf, sizeof(buf), "%s:%d", ACCOUNT_NOTI_NAME_SYNC_UPDATE, account_db_id);
+	_account_insert_delete_update_notification_send(buf);
 
 	hstmt = NULL;
 	error_code = ACCOUNT_ERROR_NONE;
@@ -2329,7 +2828,7 @@ CATCH:
 	return error_code;
 }
 
-int account_query_account_by_account_id(int account_db_id, account_h *account)
+ACCOUNT_API int account_query_account_by_account_id(int account_db_id, account_h *account)
 {
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
@@ -2379,7 +2878,7 @@ CATCH:
 	return error_code;
 }
 
-int account_query_account_by_user_name(account_cb cb_func, const char *user_name, void *user_data)
+ACCOUNT_API int account_query_account_by_user_name(account_cb cb_func, const char *user_name, void *user_data)
 {
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
@@ -2503,7 +3002,7 @@ CATCH:
 	return error_code;
 }
 
-int account_query_account_by_capability(account_cb cb_func, const char* capability_type, account_capability_state_e capability_value, void* user_data)
+ACCOUNT_API int account_query_account_by_capability(account_cb cb_func, const char* capability_type, account_capability_state_e capability_value, void* user_data)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -2587,22 +3086,7 @@ int account_query_account_by_capability(account_cb cb_func, const char* capabili
 	for (iter = account_head->account_list; iter != NULL; iter = g_list_next(iter)) {
 		account_h account = NULL;
 		account = (account_h)iter->data;
-
-
 		account_s* testaccount = (account_s*)account;
-
-		ACCOUNT_VERBOSE("id = %d", testaccount->id);
-		ACCOUNT_VERBOSE("user_name = %s", testaccount->user_name);
-		ACCOUNT_VERBOSE("email_address = %s", testaccount->email_address);
-		ACCOUNT_VERBOSE("display_name = %s", testaccount->display_name);
-		ACCOUNT_VERBOSE("icon_path = %s", testaccount->icon_path);
-		ACCOUNT_VERBOSE("source = %s", testaccount->source);
-		ACCOUNT_VERBOSE("package_name = %s", testaccount->package_name);
-		ACCOUNT_VERBOSE("access_token = %s", testaccount->access_token);
-		ACCOUNT_VERBOSE("domain_name = %s", testaccount->domain_name);
-		ACCOUNT_VERBOSE("auth_type = %d", testaccount->auth_type);
-		ACCOUNT_VERBOSE("secret = %d", testaccount->secret);
-		ACCOUNT_VERBOSE("sync_support = %d", testaccount->sync_support);
 
 		account_query_capability_by_account_id(_account_get_capability_text_cb, testaccount->id, (void*)testaccount);
 		_account_query_custom_by_account_id(_account_get_custom_text_cb, testaccount->id, (void*)testaccount);
@@ -2634,7 +3118,115 @@ CATCH:
 	return error_code;
 }
 
-int account_query_account_by_package_name(account_cb cb_func, const char* package_name, void* user_data)
+ACCOUNT_API int account_query_account_by_capability_type(account_cb cb_func, const char* capability_type, void* user_data)
+{
+	int 			error_code = ACCOUNT_ERROR_NONE;
+	account_stmt	hstmt = NULL;
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	int 			rc = 0;
+	int ret = ACCOUNT_ERROR_NONE;
+
+	ACCOUNT_RETURN_VAL((capability_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("capability_type IS NULL"));
+	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("CALL BACK IS NULL"));
+	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
+
+	ret = _do_account_owner_existance_check();
+	if (ret != ACCOUNT_ERROR_NONE) {
+		ACCOUNT_WARNING("_do_account_owner_existance_check Failed !!!\n");
+	}
+
+	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT * FROM %s WHERE _id IN (SELECT account_id from %s WHERE key=?)", ACCOUNT_TABLE, CAPABILITY_TABLE);
+
+	hstmt = _account_prepare_query(query);
+
+	int binding_count = 1;
+	_account_query_bind_text(hstmt, binding_count++, (char*)capability_type);
+
+	rc = _account_query_step(hstmt);
+
+	account_s* account_head = NULL;
+
+	ACCOUNT_CATCH_ERROR(rc == SQLITE_ROW, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found.\n"));
+
+	int tmp = 0;
+
+	account_head = (account_s*) malloc(sizeof(account_s));
+	if (account_head == NULL) {
+		ACCOUNT_FATAL("malloc Failed");
+		if (hstmt != NULL) {
+			_account_query_finalize(hstmt);
+			hstmt = NULL;
+		}
+		return ACCOUNT_ERROR_OUT_OF_MEMORY;
+	}
+	ACCOUNT_MEMSET(account_head, 0x00, sizeof(account_s));
+
+	while (rc == SQLITE_ROW) {
+		account_s* account_record = NULL;
+
+		account_record = (account_s*) malloc(sizeof(account_s));
+
+		if (account_record == NULL) {
+			ACCOUNT_FATAL("malloc Failed");
+			break;
+		}
+		ACCOUNT_MEMSET(account_record, 0x00, sizeof(account_s));
+
+		_account_convert_column_to_account(hstmt, account_record);
+
+		account_head->account_list = g_list_append(account_head->account_list, account_record);
+
+		rc = _account_query_step(hstmt);
+		tmp++;
+		ACCOUNT_VERBOSE("DETECTED COUNT %d\n", tmp);
+	}
+
+	_account_query_finalize(hstmt);
+	hstmt = NULL;
+
+	GList *iter;
+
+
+	tmp = g_list_length(account_head->account_list);
+	ACCOUNT_VERBOSE("GLIST LEN %d\n", tmp);
+
+	for (iter = account_head->account_list; iter != NULL; iter = g_list_next(iter)) {
+		account_h account = NULL;
+		account = (account_h)iter->data;
+		account_s* testaccount = (account_s*)account;
+
+		account_query_capability_by_account_id(_account_get_capability_text_cb, testaccount->id, (void*)testaccount);
+		_account_query_custom_by_account_id(_account_get_custom_text_cb, testaccount->id, (void*)testaccount);
+
+		ACCOUNT_VERBOSE("capability_list address = %p", testaccount->capablity_list);
+
+		cb_func(account, user_data);
+
+	}
+
+	error_code = ACCOUNT_ERROR_NONE;
+
+CATCH:
+	if (hstmt != NULL) {
+		_account_query_finalize(hstmt);
+		hstmt = NULL;
+	}
+	if (account_head) {
+		if (account_head->account_list) {
+			_account_glist_free(account_head->account_list);
+			account_head->account_list = NULL;
+			_account_free_account_items(account_head);
+		}
+		_ACCOUNT_FREE(account_head);
+	}
+
+	pthread_mutex_unlock(&account_mutex);
+	return error_code;
+}
+
+ACCOUNT_API int account_query_account_by_package_name(account_cb cb_func, const char* package_name, void* user_data)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -2664,7 +3256,7 @@ int account_query_account_by_package_name(account_cb cb_func, const char* packag
 
 	account_s* account_head = NULL;
 
-	ACCOUNT_CATCH_ERROR(rc == SQLITE_ROW, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found.\n"));
+	ACCOUNT_CATCH_ERROR(rc == SQLITE_ROW, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found.(%s)\n", package_name));
 
 	int tmp = 0;
 
@@ -2755,17 +3347,20 @@ CATCH:
 	return error_code;
 }
 
-int account_delete(int account_id)
+ACCOUNT_API int account_delete(int account_id)
 {
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
 	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
-	int				rc = 0, count = -1;
+	int				rc = 0;
 	int				ret_transaction = 0;
 	bool			is_success = FALSE;
 
 	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
 
+#ifdef ACCOUNT_VERIFY
+	int count = -1;
+	account_h		account = NULL;
 	/* Check requested ID to delete */
 	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT COUNT(*) FROM %s WHERE _id=%d", ACCOUNT_TABLE, account_id);
 
@@ -2774,6 +3369,19 @@ int account_delete(int account_id)
 		ACCOUNT_ERROR("account id(%d) is not exist. count(%d)\n", account_id, count);
 		return ACCOUNT_ERROR_RECORD_NOT_FOUND;
 	}
+
+	/* Check permission of requested appid */
+	account_create(&account);
+	account_query_account_by_account_id(account_id, &account);
+
+	if(!_account_verify_permission(((account_s*)account)->package_name)) {
+		ACCOUNT_ERROR("No permission to delete\n");
+		account_destroy(account);
+		return ACCOUNT_ERROR_PERMISSION_DENIED;
+	}
+
+	account_destroy(account);
+#endif
 
 	/* transaction control required*/
 	ret_transaction = _account_begin_transaction();
@@ -2838,8 +3446,11 @@ CATCH:
 	if (ret_transaction != ACCOUNT_ERROR_NONE) {
 		ACCOUNT_ERROR("account_svc_delete:_account_svc_end_transaction fail %d, is_success=%d\n", ret_transaction, is_success);
 	} else {
-		if (is_success == true)
-			_account_insert_delete_update_notification_send(ACCOUNT_NOTI_NAME_DELETE);
+		if (is_success == true) {
+			char buf[64]={0,};
+			ACCOUNT_SNPRINTF(buf, sizeof(buf), "%s:%d", ACCOUNT_NOTI_NAME_DELETE, account_id);
+			_account_insert_delete_update_notification_send(buf);
+		}
 	}
 
 	pthread_mutex_unlock(&account_mutex);
@@ -2848,7 +3459,7 @@ CATCH:
 
 }
 
-int account_delete_from_db_by_id(int account_db_id)
+ACCOUNT_API int account_delete_from_db_by_id(int account_db_id)
 {
 	ACCOUNT_RETURN_VAL((account_db_id > 0), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT ID IS LESS THAN ZERO."));
 
@@ -2910,7 +3521,7 @@ CATCH:
 	return error_code;
 }
 
-int account_delete_from_db_by_user_name(char *user_name, char *package_name)
+ACCOUNT_API int account_delete_from_db_by_user_name(char *user_name, char *package_name)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -3008,8 +3619,11 @@ CATCH:
 	if (ret_transaction != ACCOUNT_ERROR_NONE) {
 		ACCOUNT_ERROR("account_svc_delete:_account_svc_end_transaction fail %d, is_success=%d\n", ret_transaction, is_success);
 	} else {
-		if (is_success == true)
-			_account_insert_delete_update_notification_send(ACCOUNT_NOTI_NAME_DELETE);
+		if (is_success == true) {
+			char buf[64]={0,};
+			ACCOUNT_SNPRINTF(buf, sizeof(buf), "%s:%d", ACCOUNT_NOTI_NAME_DELETE, account_id);
+			_account_insert_delete_update_notification_send(buf);
+		}
 	}
 
 	pthread_mutex_unlock(&account_mutex);
@@ -3017,7 +3631,7 @@ CATCH:
 	return error_code;
 }
 
-int account_delete_from_db_by_package_name(char *package_name)
+ACCOUNT_API int account_delete_from_db_by_package_name(char *package_name)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -3106,8 +3720,11 @@ CATCH:
 	if (ret_transaction != ACCOUNT_ERROR_NONE) {
 		ACCOUNT_ERROR("account_svc_delete:_account_svc_end_transaction fail %d, is_success=%d\n", ret_transaction, is_success);
 	} else {
-		if (is_success == true)
-			_account_insert_delete_update_notification_send(ACCOUNT_NOTI_NAME_DELETE);
+		if (is_success == true) {
+			char buf[64]={0,};
+			ACCOUNT_SNPRINTF(buf, sizeof(buf), "%s:%d", ACCOUNT_NOTI_NAME_DELETE, -1);
+			_account_insert_delete_update_notification_send(buf);
+		}
 	}
 
 	pthread_mutex_unlock(&account_mutex);
@@ -3115,7 +3732,7 @@ CATCH:
 	return error_code;
 }
 
-int account_get_total_count_from_db(int *count)
+ACCOUNT_API int account_get_total_count_from_db(int *count)
 {
 	if (!count) {
 		ACCOUNT_ERROR("(%s)-(%d) count is NULL.\n", __FUNCTION__, __LINE__);
@@ -3143,7 +3760,7 @@ int account_get_total_count_from_db(int *count)
 	if (SQLITE_ROW != rc) {
 		ACCOUNT_ERROR("[ERROR] sqlite3_step() failed\n");
 		sqlite3_finalize(pStmt);
-		return ACCOUNT_ERROR_DB_FAILED;
+		return ACCOUNT_ERROR_RECORD_NOT_FOUND;
 	}
 
 	ncount = sqlite3_column_int(pStmt, 0);
@@ -3161,7 +3778,7 @@ int account_get_total_count_from_db(int *count)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_destroy(account_h account)
+ACCOUNT_API int account_destroy(account_h account)
 {
 	account_s *data = (account_s*)account;
 
@@ -3180,6 +3797,14 @@ static int _account_type_free_label_items(label_s *data)
 	_ACCOUNT_FREE(data->app_id);
 	_ACCOUNT_FREE(data->label);
 	_ACCOUNT_FREE(data->locale);
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+static int _account_type_free_feature_items(provider_feature_s *data)
+{
+	_ACCOUNT_FREE(data->app_id);
+	_ACCOUNT_FREE(data->key);
 
 	return ACCOUNT_ERROR_NONE;
 }
@@ -3240,7 +3865,7 @@ static int _account_type_free_account_type_items(account_type_s *data)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_create(account_type_h *account_type)
+ACCOUNT_API int account_type_create(account_type_h *account_type)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3263,7 +3888,7 @@ int account_type_create(account_type_h *account_type)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_destroy(account_type_h account_type)
+ACCOUNT_API int account_type_destroy(account_type_h account_type)
 {
 	account_type_s *data = (account_type_s*)account_type;
 
@@ -3278,7 +3903,7 @@ int account_type_destroy(account_type_h account_type)
 }
 
 //app_id mandatory field
-int account_type_set_app_id(account_type_h account_type, const char *app_id)
+ACCOUNT_API int account_type_set_app_id(account_type_h account_type, const char *app_id)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account_type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3300,7 +3925,7 @@ int account_type_set_app_id(account_type_h account_type, const char *app_id)
 }
 
 //service_provider_id mandatory field
-int account_type_set_service_provider_id(account_type_h account_type, const char *service_provider_id)
+ACCOUNT_API int account_type_set_service_provider_id(account_type_h account_type, const char *service_provider_id)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account_type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3321,7 +3946,7 @@ int account_type_set_service_provider_id(account_type_h account_type, const char
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_set_icon_path(account_type_h account_type, const char *icon_path)
+ACCOUNT_API int account_type_set_icon_path(account_type_h account_type, const char *icon_path)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account_type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3342,7 +3967,7 @@ int account_type_set_icon_path(account_type_h account_type, const char *icon_pat
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_set_small_icon_path(account_type_h account_type, const char *small_icon_path)
+ACCOUNT_API int account_type_set_small_icon_path(account_type_h account_type, const char *small_icon_path)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account_type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3363,7 +3988,7 @@ int account_type_set_small_icon_path(account_type_h account_type, const char *sm
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_set_multiple_account_support(account_type_h account_type, const bool multiple_account_support)
+ACCOUNT_API int account_type_set_multiple_account_support(account_type_h account_type, const bool multiple_account_support)
 {
 	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("(%s)-(%d) account handle is NULL.\n",  __FUNCTION__, __LINE__));
 
@@ -3375,7 +4000,7 @@ int account_type_set_multiple_account_support(account_type_h account_type, const
 }
 
 // unset?
-int account_type_set_label(account_type_h account_type, const char* label, const char* locale)
+ACCOUNT_API int account_type_set_label(account_type_h account_type, const char* label, const char* locale)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account_type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3404,8 +4029,7 @@ int account_type_set_label(account_type_h account_type, const char* label, const
 	return ACCOUNT_ERROR_NONE;
 }
 
-
-int account_type_get_app_id(account_type_h account_type, char **app_id)
+ACCOUNT_API int account_type_get_app_id(account_type_h account_type, char **app_id)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3425,7 +4049,7 @@ int account_type_get_app_id(account_type_h account_type, char **app_id)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_get_service_provider_id(account_type_h account_type, char **service_provider_id)
+ACCOUNT_API int account_type_get_service_provider_id(account_type_h account_type, char **service_provider_id)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3445,7 +4069,7 @@ int account_type_get_service_provider_id(account_type_h account_type, char **ser
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_get_icon_path(account_type_h account_type, char **icon_path)
+ACCOUNT_API int account_type_get_icon_path(account_type_h account_type, char **icon_path)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3465,7 +4089,7 @@ int account_type_get_icon_path(account_type_h account_type, char **icon_path)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_get_small_icon_path(account_type_h account_type, char **small_icon_path)
+ACCOUNT_API int account_type_get_small_icon_path(account_type_h account_type, char **small_icon_path)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3485,7 +4109,7 @@ int account_type_get_small_icon_path(account_type_h account_type, char **small_i
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_get_multiple_account_support(account_type_h account_type, int *multiple_account_support)
+ACCOUNT_API int account_type_get_multiple_account_support(account_type_h account_type, int *multiple_account_support)
 {
 	if (!account_type) {
 		ACCOUNT_ERROR("(%s)-(%d) account_type handle is NULL.\n", __FUNCTION__, __LINE__);
@@ -3503,7 +4127,7 @@ int account_type_get_multiple_account_support(account_type_h account_type, int *
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_get_label(account_type_h account_type, account_label_cb cb_func, void *user_data)
+ACCOUNT_API int account_type_get_label(account_type_h account_type, account_label_cb cb_func, void *user_data)
 {
 	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
 	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO CALLBACK FUNCTION"));
@@ -3579,12 +4203,7 @@ static int _account_type_execute_insert_query(account_type_s *account_type)
 	/* check mandatory field */
 	// app id & service provider id
 	if (!account_type->app_id) {
-		ACCOUNT_ERROR("App name is mandetory field, it can not be NULL!!!!\n");
-		return ACCOUNT_ERROR_INVALID_PARAMETER;
-	}
-
-	if (!account_type->service_provider_id) {
-		ACCOUNT_ERROR("service_provider_id is mandetory field, it can not be NULL!!!!\n");
+		ACCOUNT_ERROR("App id is mandetory field, it can not be NULL!!!!\n");
 		return ACCOUNT_ERROR_INVALID_PARAMETER;
 	}
 
@@ -3673,9 +4292,223 @@ static int _account_type_insert_label(account_type_s *account_type)
 	return ACCOUNT_ERROR_NONE;
 }
 
-int account_type_insert_to_db(account_type_h account_type, int* account_type_id)
+static void _account_type_convert_column_to_provider_feature(account_stmt hstmt, provider_feature_s *feature_record)
 {
-	int		error_code = ACCOUNT_ERROR_NONE;
+	char *textbuf = NULL;
+
+	textbuf = _account_query_table_column_text(hstmt, PROVIDER_FEATURE_FIELD_APP_ID);
+	_account_db_data_to_text(textbuf, &(feature_record->app_id));
+
+	textbuf = _account_query_table_column_text(hstmt, PROVIDER_FEATURE_FIELD_KEY);
+	_account_db_data_to_text(textbuf, &(feature_record->key));
+
+	ACCOUNT_VERBOSE("END _account_type_convert_column_to_provider_feature");
+}
+
+ACCOUNT_API int account_type_query_provider_feature_by_app_id(provider_feature_cb cb_func, const char* app_id, void *user_data )
+{
+	int 			error_code = ACCOUNT_ERROR_NONE;
+	account_stmt	hstmt = NULL;
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	int 			rc = 0, binding_count = 1;
+
+	ACCOUNT_RETURN_VAL((app_id != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("APP ID IS NULL"));
+	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO CALLBACK FUNCTION"));
+	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
+
+	ACCOUNT_VERBOSE("app_id = %s", app_id);
+
+	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT * FROM %s WHERE app_id = ?", PROVIDER_FEATURE_TABLE);
+	hstmt = _account_prepare_query(query);
+
+	_account_query_bind_text(hstmt, binding_count++, app_id);
+
+	rc = _account_query_step(hstmt);
+	ACCOUNT_CATCH_ERROR(rc == SQLITE_ROW, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found.\n"));
+
+	provider_feature_s* feature_record = NULL;
+
+	while (rc == SQLITE_ROW) {
+		feature_record = (provider_feature_s*) malloc(sizeof(provider_feature_s));
+
+		if (feature_record == NULL) {
+			ACCOUNT_FATAL("malloc Failed");
+			break;
+		}
+
+		ACCOUNT_MEMSET(feature_record, 0x00, sizeof(provider_feature_s));
+
+		_account_type_convert_column_to_provider_feature(hstmt, feature_record);
+
+		cb_func(feature_record->app_id, feature_record->key, user_data);
+
+		_account_type_free_feature_items(feature_record);
+		_ACCOUNT_FREE(feature_record);
+
+		rc = _account_query_step(hstmt);
+	}
+
+	_account_query_finalize(hstmt);
+	hstmt = NULL;
+
+	error_code = ACCOUNT_ERROR_NONE;
+
+CATCH:
+	if (hstmt != NULL) {
+		_account_query_finalize(hstmt);
+		hstmt = NULL;
+	}
+
+	pthread_mutex_unlock(&account_mutex);
+	return error_code;
+}
+
+ACCOUNT_API bool account_type_query_supported_feature(const char* app_id, const char* capability)
+{
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	int 			record_count = 0;
+
+	ACCOUNT_RETURN_VAL((app_id != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("APP ID IS NULL"));
+	ACCOUNT_RETURN_VAL((capability != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO CAPABILITY"));
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT COUNT(*) FROM %s where app_id='%s' and key='%s'", PROVIDER_FEATURE_TABLE, app_id, capability);
+
+	record_count = _account_get_record_count(query);
+
+	if (record_count <= 0) {
+		ACCOUNT_WARNING( "related capability type item is not existed rc=%d , %s", record_count, _account_db_err_msg());
+		return FALSE;
+	}
+
+	return TRUE;
+
+}
+
+
+ACCOUNT_API int account_type_get_provider_feature_all(account_type_h account_type, provider_feature_cb cb_func, void* user_data)
+{
+	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
+	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("NO CALLBACK FUNCTION"));
+
+	GSList *iter;
+	account_type_s *data = (account_type_s*)account_type;
+
+	for (iter = data->provider_feature_list; iter != NULL; iter = g_slist_next(iter)) {
+		provider_feature_s *feature_data = NULL;
+
+		feature_data = (provider_feature_s*)iter->data;
+
+		ACCOUNT_VERBOSE("appid = %s, key = %s", feature_data->key, feature_data->app_id);
+
+		cb_func(feature_data->app_id, feature_data->key, user_data);
+	}
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+ACCOUNT_API int account_type_set_provider_feature(account_type_h account_type, const char* provider_feature)
+{
+	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("account type handle is null"));
+	ACCOUNT_RETURN_VAL((provider_feature != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("provider_feature is null"));
+
+	account_type_s *data = (account_type_s*)account_type;
+
+	GSList *iter = NULL;
+	bool b_is_new = TRUE;
+
+	for(iter = data->provider_feature_list; iter != NULL; iter = g_slist_next(iter)) {
+		provider_feature_s *feature_data = NULL;
+		feature_data = (provider_feature_s*)iter->data;
+
+		if(!strcmp(feature_data->key, provider_feature)) {
+			b_is_new = FALSE;
+			break;
+		}
+	}
+
+	if(b_is_new) {
+		provider_feature_s* feature_data = (provider_feature_s*)malloc(sizeof(provider_feature_s));
+
+		if (feature_data == NULL)
+			return ACCOUNT_ERROR_OUT_OF_MEMORY;
+		ACCOUNT_MEMSET(feature_data, 0, sizeof(provider_feature_s));
+
+		feature_data->key = _account_get_text(provider_feature);
+		data->provider_feature_list = g_slist_append(data->provider_feature_list, (gpointer)feature_data);
+	}
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+static int _account_type_insert_provider_feature(account_type_s *account_type, const char* app_id)
+{
+	int 			rc, count = 1;
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	account_stmt 	hstmt = NULL;
+
+	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
+	ACCOUNT_RETURN_VAL((app_id != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("APP ID IS NULL"));
+
+	if (g_slist_length( account_type->provider_feature_list)==0) {
+		ACCOUNT_ERROR( "no capability\n");
+		return ACCOUNT_ERROR_NONE;
+	}
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT COUNT(*) from %s where AppId='%s'", ACCOUNT_TYPE_TABLE, app_id);
+
+	rc = _account_get_record_count(query);
+
+	if (rc <= 0) {
+		ACCOUNT_WARNING( "related account type item is not existed rc=%d , %s", rc, _account_db_err_msg());
+		return ACCOUNT_ERROR_RECORD_NOT_FOUND;
+	}
+
+	/* insert query*/
+
+	GSList *iter;
+
+	for (iter = account_type->provider_feature_list; iter != NULL; iter = g_slist_next(iter)) {
+		int rc, ret;
+		count = 1;
+		ACCOUNT_MEMSET(query, 0x00, sizeof(query));
+		ACCOUNT_SNPRINTF(query, sizeof(query), "INSERT INTO %s(app_id, key) VALUES "
+				"(?, ?) ", PROVIDER_FEATURE_TABLE);
+
+		hstmt = _account_prepare_query(query);
+
+		ACCOUNT_RETURN_VAL((hstmt != NULL), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_prepare_query() failed(%s).\n", _account_db_err_msg()));
+
+		provider_feature_s* feature_data = NULL;
+		feature_data = (provider_feature_s*)iter->data;
+		ACCOUNT_VERBOSE("key = %s, app_id = %s \n", feature_data->key, app_id);
+
+		ret = _account_query_bind_text(hstmt, count++, app_id);
+		ACCOUNT_RETURN_VAL((ret == ACCOUNT_ERROR_NONE), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("Text binding fail"));
+		ret = _account_query_bind_text(hstmt, count++, feature_data->key);
+		ACCOUNT_RETURN_VAL((ret == ACCOUNT_ERROR_NONE), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("Integer binding fail"));
+
+		rc = _account_query_step(hstmt);
+
+		if (rc != SQLITE_DONE) {
+			ACCOUNT_FATAL( "_account_query_step() failed(%d, %s)", rc, _account_db_err_msg());
+			break;
+		}
+
+		_account_query_finalize(hstmt);
+		hstmt = NULL;
+
+	}
+
+	ACCOUNT_VERBOSE( "_account_type_insert_provider_feature() DONE\n");
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+ACCOUNT_API int account_type_insert_to_db(account_type_h account_type, int* account_type_id)
+{
+	int		error_code = ACCOUNT_ERROR_NONE, ret_transaction = 0;
 
 	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
 	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT TYPE HANDLE IS NULL"));
@@ -3685,22 +4518,124 @@ int account_type_insert_to_db(account_type_h account_type, int* account_type_id)
 
 	pthread_mutex_lock(&account_mutex);
 
+
+	/* transaction control required*/
+	ret_transaction = _account_begin_transaction();
+
+	if (ret_transaction != ACCOUNT_ERROR_NONE) {
+		ACCOUNT_ERROR("_account_begin_transaction fail %d\n", ret_transaction);
+		pthread_mutex_unlock(&account_mutex);
+		return ret_transaction;
+	}
+
 	if (_account_type_check_duplicated(data)) {
-		error_code = ACCOUNT_ERROR_DUPLICATED;
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("Duplicated, rollback insert query(%x)!!!!\n", ret_transaction);
+		*account_type_id = -1;
+		pthread_mutex_unlock(&account_mutex);
+		return ACCOUNT_ERROR_DUPLICATED;
 	} else {
 		*account_type_id = _account_get_next_sequence(ACCOUNT_TYPE_TABLE);
 
 		error_code = _account_type_execute_insert_query(data);
 
-		if (error_code != ACCOUNT_ERROR_NONE)
+		if (error_code != ACCOUNT_ERROR_NONE){
+			error_code = ACCOUNT_ERROR_DUPLICATED;
+			ret_transaction = _account_end_transaction(FALSE);
+			ACCOUNT_ERROR("Insert fail, rollback insert query(%x)!!!!\n", ret_transaction);
 			*account_type_id = -1;
+			pthread_mutex_unlock(&account_mutex);
+			return error_code;
+		}
 	}
 
 	ACCOUNT_INFO( "_account_type_execute_insert_query, insert error_code : %d", error_code);
 
-	_account_type_insert_label(data);
+	error_code = _account_type_insert_provider_feature(data, data->app_id);
+	if(error_code != ACCOUNT_ERROR_NONE) {
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("Insert provider feature fail(%x), rollback insert query(%x)!!!!\n", error_code, ret_transaction);
+		pthread_mutex_unlock(&account_mutex);
+		return error_code;
+	}
+	error_code = _account_type_insert_label(data);
+	if(error_code != ACCOUNT_ERROR_NONE) {
+		ret_transaction = _account_end_transaction(FALSE);
+		ACCOUNT_ERROR("Insert label fail(%x), rollback insert query(%x)!!!!\n", error_code, ret_transaction);
+		pthread_mutex_unlock(&account_mutex);
+		return error_code;
+	}
+
+	ret_transaction = _account_end_transaction(TRUE);
+	ACCOUNT_DEBUG("Insert success(%x), commit insert query(%x)!!!!\n", error_code, ret_transaction);
 
 	pthread_mutex_unlock(&account_mutex);
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+static int _account_type_update_provider_feature(account_type_s *account_type, const char* app_id)
+{
+	int 			rc, count = 1;
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	account_stmt	hstmt = NULL;
+
+	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
+
+	if (g_slist_length( account_type->provider_feature_list)==0) {
+		ACCOUNT_ERROR( "no feature\n");
+		return ACCOUNT_ERROR_NONE;
+	}
+
+	ACCOUNT_DEBUG( "app id", app_id);
+
+	ACCOUNT_MEMSET(query, 0x00, sizeof(query));
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "DELETE FROM %s WHERE app_id=? ", PROVIDER_FEATURE_TABLE);
+	hstmt = _account_prepare_query(query);
+	count = 1;
+	_account_query_bind_text(hstmt, count++, app_id);
+	rc = _account_query_step(hstmt);
+
+	if (rc != SQLITE_DONE) {
+		ACCOUNT_FATAL( "_account_query_step() failed(%d, %s)", rc, _account_db_err_msg());
+		return ACCOUNT_ERROR_DB_FAILED;
+	}
+	_account_query_finalize(hstmt);
+	hstmt = NULL;
+
+	GSList *iter;
+
+	for (iter = account_type->provider_feature_list; iter != NULL; iter = g_slist_next(iter)) {
+		int rc, ret;
+		count = 1;
+		ACCOUNT_MEMSET(query, 0x00, sizeof(query));
+		ACCOUNT_SNPRINTF(query, sizeof(query), "INSERT INTO %s(app_id, key) VALUES "
+				"(?, ?) ", PROVIDER_FEATURE_TABLE);
+
+		hstmt = _account_prepare_query(query);
+
+		ACCOUNT_RETURN_VAL((hstmt != NULL), {}, ACCOUNT_ERROR_DB_FAILED, ("_account_prepare_query() failed(%s).\n", _account_db_err_msg()));
+
+		provider_feature_s* feature_data = NULL;
+		feature_data = (provider_feature_s*)iter->data;
+
+		ret = _account_query_bind_text(hstmt, count++, account_type->app_id);
+		ACCOUNT_RETURN_VAL((ret == ACCOUNT_ERROR_NONE), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("Text binding fail"));
+		ret = _account_query_bind_text(hstmt, count++, feature_data->key);
+		ACCOUNT_RETURN_VAL((ret == ACCOUNT_ERROR_NONE), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("Text binding fail"));
+
+		rc = _account_query_step(hstmt);
+
+		if (rc != SQLITE_DONE) {
+			ACCOUNT_FATAL( "_account_query_step() failed(%d, %s)", rc, _account_db_err_msg());
+			break;
+		}
+		_account_query_finalize(hstmt);
+		hstmt = NULL;
+	}
+
+	ACCOUNT_VERBOSE( "_account_type_update_label() DONE\n");
 
 	return ACCOUNT_ERROR_NONE;
 }
@@ -3804,11 +4739,13 @@ static int _account_type_update_account(account_type_s *account_type, const char
 
 	/*update label*/
 	error_code = _account_type_update_label(account_type, app_id);
+	/* update provider feature */
+	error_code = _account_type_update_provider_feature(account_type, app_id);
 
 	return error_code;
 }
 
-int account_type_update_to_db_by_app_id(account_type_h account_type, const char* app_id)
+ACCOUNT_API int account_type_update_to_db_by_app_id(account_type_h account_type, const char* app_id)
 {
 	ACCOUNT_RETURN_VAL((account_type != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("DATA IS NULL"));
 	ACCOUNT_RETURN_VAL((app_id != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("APP ID IS NULL"));
@@ -3823,10 +4760,10 @@ int account_type_update_to_db_by_app_id(account_type_h account_type, const char*
 
 	pthread_mutex_unlock(&account_mutex);
 
-	return ACCOUNT_ERROR_NONE;
+	return error_code;
 }
 
-int account_type_delete_by_app_id(const char* app_id)
+ACCOUNT_API int account_type_delete_by_app_id(const char* app_id)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -3869,6 +4806,25 @@ int account_type_delete_by_app_id(const char* app_id)
 	ACCOUNT_CATCH_ERROR(rc == SQLITE_DONE, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found.\n"));
 
 	_account_query_finalize(hstmt);
+	hstmt = NULL;
+
+	binding_count = 1;
+	ACCOUNT_MEMSET(query, 0, sizeof(query));
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "DELETE FROM %s WHERE app_id = ? ", PROVIDER_FEATURE_TABLE);
+
+	hstmt = _account_prepare_query(query);
+	ACCOUNT_CATCH_ERROR(hstmt != NULL, {}, ACCOUNT_ERROR_DB_FAILED,
+			("_account_svc_query_prepare(%s) failed(%s).\n", query, _account_db_err_msg()));
+
+	_account_query_bind_text(hstmt, binding_count++, app_id);
+
+	rc = _account_query_step(hstmt);
+	ACCOUNT_CATCH_ERROR(rc == SQLITE_DONE, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found. AppId=%s, rc=%d\n", app_id, rc));
+
+	_account_query_finalize(hstmt);
+	is_success = TRUE;
+
 	hstmt = NULL;
 
 	binding_count = 1;
@@ -3946,7 +4902,7 @@ static void _account_type_convert_column_to_label(account_stmt hstmt, label_s *l
 	ACCOUNT_VERBOSE("END _account_type_convert_column_to_label");
 }
 
-int account_type_query_label_by_app_id(account_label_cb cb_func, const char* app_id, void *user_data )
+ACCOUNT_API int account_type_query_label_by_app_id(account_label_cb cb_func, const char* app_id, void *user_data )
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -4048,8 +5004,29 @@ bool _account_get_label_text_cb(char* app_id, char* label, char* locale, void *u
 	return TRUE;
 }
 
+bool _account_get_provider_feature_cb(char* app_id, char* key, void* user_data)
+{
+	account_type_s *data = (account_type_s*)user_data;
 
-int account_type_query_by_app_id(const char* app_id, account_type_h *account_type)
+	provider_feature_s *feature_data = (provider_feature_s*)malloc(sizeof(provider_feature_s));
+
+	if (feature_data == NULL) {
+		ACCOUNT_FATAL("_account_get_provider_feature_cb : MALLOC FAIL\n");
+		return FALSE;
+	}
+	ACCOUNT_MEMSET(feature_data, 0, sizeof(provider_feature_s));
+
+	feature_data->app_id = _account_get_text(app_id);
+	feature_data->key = _account_get_text(key);
+
+	data->provider_feature_list = g_slist_append(data->provider_feature_list, (gpointer)feature_data);
+
+	ACCOUNT_VERBOSE("appid=%s, key=%s\n", feature_data->app_id, feature_data->key);
+
+	return TRUE;
+}
+
+ACCOUNT_API int account_type_query_by_app_id(const char* app_id, account_type_h *account_type)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -4062,6 +5039,7 @@ int account_type_query_by_app_id(const char* app_id, account_type_h *account_typ
 
 	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
 
+	ACCOUNT_DEBUG("app id (%s)\n", app_id);
 	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT * FROM %s WHERE AppId = ?", ACCOUNT_TYPE_TABLE);
 	hstmt = _account_prepare_query(query);
 
@@ -4079,7 +5057,8 @@ int account_type_query_by_app_id(const char* app_id, account_type_h *account_typ
 	}
 
 	_account_query_finalize(hstmt);
-	account_type_query_label_by_app_id(_account_get_label_text_cb, account_type_record->app_id, (void*)account_type_record);
+	account_type_query_label_by_app_id(_account_get_label_text_cb, app_id, (void*)account_type_record);
+	account_type_query_provider_feature_by_app_id(_account_get_provider_feature_cb, app_id,(void*)account_type_record);
 
 	hstmt = NULL;
 	error_code = ACCOUNT_ERROR_NONE;
@@ -4094,7 +5073,103 @@ int account_type_query_by_app_id(const char* app_id, account_type_h *account_typ
 	return error_code;
 }
 
-int account_type_foreach_account_type_from_db(account_type_cb callback, void *user_data)
+ACCOUNT_API int account_type_query_app_id_exist(const char* app_id)
+{
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	int 			rc = 0;
+
+	ACCOUNT_RETURN_VAL((app_id != 0), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("APP ID IS NULL"));
+	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
+
+	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
+
+	ACCOUNT_DEBUG("app id (%s)\n", app_id);
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT COUNT(*) FROM %s WHERE AppId = '%s'", ACCOUNT_TYPE_TABLE, app_id);
+	rc = _account_get_record_count(query);
+
+	if (rc <= 0) {
+		ACCOUNT_DEBUG("(%s) not exist in account type db");
+		return ACCOUNT_ERROR_RECORD_NOT_FOUND;
+	}
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+ACCOUNT_API int account_type_query_by_provider_feature(account_type_cb cb_func, const char* key, void* user_data)
+{
+	int 			error_code = ACCOUNT_ERROR_NONE;
+	account_stmt	hstmt = NULL;
+	char			query[ACCOUNT_SQL_LEN_MAX] = {0, };
+	int 			rc = 0;
+	GList			*account_type_list = NULL;
+
+	ACCOUNT_RETURN_VAL((key != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("capability_type IS NULL"));
+	ACCOUNT_RETURN_VAL((cb_func != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("CALL BACK IS NULL"));
+	ACCOUNT_RETURN_VAL((g_hAccountDB != NULL), {}, ACCOUNT_ERROR_DB_NOT_OPENED, ("The database isn't connected."));
+
+	ACCOUNT_MEMSET(query, 0x00, ACCOUNT_SQL_LEN_MAX);
+
+	ACCOUNT_SNPRINTF(query, sizeof(query), "SELECT * FROM %s WHERE AppId IN (SELECT app_id from %s WHERE key=?)", ACCOUNT_TYPE_TABLE, PROVIDER_FEATURE_TABLE);
+
+	hstmt = _account_prepare_query(query);
+
+	int binding_count = 1;
+	_account_query_bind_text(hstmt, binding_count++, (char*)key);
+
+	rc = _account_query_step(hstmt);
+
+	account_type_s *account_type_record = NULL;
+
+	ACCOUNT_CATCH_ERROR(rc == SQLITE_ROW, {}, ACCOUNT_ERROR_RECORD_NOT_FOUND, ("The record isn't found.\n"));
+
+	int k=0;
+	while(rc == SQLITE_ROW) {
+		account_type_record = (account_type_s*) malloc(sizeof(account_type_s));
+
+		if (account_type_record == NULL) {
+			ACCOUNT_FATAL("malloc Failed");
+			break;
+		}
+
+		ACCOUNT_MEMSET(account_type_record, 0x00, sizeof(account_type_s));
+		_account_type_convert_column_to_account_type(hstmt, account_type_record);
+		account_type_list = g_list_append(account_type_list, account_type_record);
+		rc = _account_query_step(hstmt);
+		k++;
+	}
+
+	_account_query_finalize(hstmt);
+	hstmt = NULL;
+
+	GList* iter;
+	k = 0;
+	for (iter = account_type_list; iter != NULL; iter = g_list_next(iter)) {
+		account_type_s *account_type = NULL;
+		account_type = (account_type_s*)iter->data;
+		account_type_query_label_by_app_id(_account_get_label_text_cb,account_type->app_id,(void*)account_type);
+		account_type_query_provider_feature_by_app_id(_account_get_provider_feature_cb, account_type->app_id,(void*)account_type);
+		cb_func((account_type_h)account_type, user_data);
+		k++;
+	}
+
+	error_code = ACCOUNT_ERROR_NONE;
+
+CATCH:
+	if (hstmt != NULL) {
+		_account_query_finalize(hstmt);
+		hstmt = NULL;
+	}
+	if (account_type_list) {
+		_account_type_glist_free(account_type_list);
+		account_type_list = NULL;
+	}
+
+	return error_code;
+}
+
+
+ACCOUNT_API int account_type_foreach_account_type_from_db(account_type_cb callback, void *user_data)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -4141,6 +5216,7 @@ int account_type_foreach_account_type_from_db(account_type_cb callback, void *us
 		account_type_s *account_type = NULL;
 		account_type = (account_type_s*)iter->data;
 		account_type_query_label_by_app_id(_account_get_label_text_cb,account_type->app_id,(void*)account_type);
+		account_type_query_provider_feature_by_app_id(_account_get_provider_feature_cb, account_type->app_id,(void*)account_type);
 		callback((account_type_h)account_type, user_data);
 		k++;
 	}
@@ -4161,7 +5237,7 @@ CATCH:
 }
 
 // output parameter label must be free
-int account_type_query_label_by_locale(const char* app_id, const char* locale, char** label)
+ACCOUNT_API int account_type_query_label_by_locale(const char* app_id, const char* locale, char** label)
 {
 	int 			error_code = ACCOUNT_ERROR_NONE;
 	account_stmt	hstmt = NULL;
@@ -4294,6 +5370,8 @@ static int _account_update_custom(account_s *account, int account_id)
 
 	ACCOUNT_RETURN_VAL((account != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("ACCOUNT HANDLE IS NULL"));
 
+	ACCOUNT_INFO( "account handle=%p, account_id=%d", account, account_id);
+
 	if (g_slist_length( account->custom_list)==0) {
 		ACCOUNT_ERROR( "_account_update_custom, no custom data\n");
 		return ACCOUNT_ERROR_NONE;
@@ -4421,4 +5499,110 @@ CATCH:
 	return error_code;
 }
 
+static void _account_subscribe_vconf_callback(keynode_t *key, void *user_data)
+{
+	account_subscribe_s* tmp = (account_subscribe_s*)user_data;
+	char *msg = NULL, *vconf_key = NULL;
+	char event_msg[256] ={0, };
+	int account_id = -1;
+
+	ACCOUNT_DEBUG("START\n");
+
+	if(!key) {
+		ACCOUNT_ERROR("No subscribtion msg !!!!!\n");
+		return;
+	}
+
+	if(!tmp) {
+		ACCOUNT_ERROR("user data required\n");
+		return;
+	}
+
+	if(!memcmp(vconf_keynode_get_name(key), VCONFKEY_ACCOUNT_MSG_STR, strlen(VCONFKEY_ACCOUNT_MSG_STR)))
+	{
+		vconf_key = vconf_keynode_get_str(key);
+		msg = strdup(vconf_key);
+
+		char* event_type = NULL;
+		char* id = NULL;
+		char* ptr = NULL;
+
+		event_type = strtok_r(msg, ":", &ptr);
+		id = strtok_r(NULL, ":", &ptr);
+
+		ACCOUNT_DEBUG("msg(%s), event_type(%s), id(%s)\n", msg, event_type, id);
+
+		ACCOUNT_SNPRINTF(event_msg,sizeof(event_msg),"%s", event_type);
+
+		account_id = atoi(id);
+
+		if(tmp->account_subscription_callback)
+			tmp->account_subscription_callback(event_msg, account_id, tmp->user_data);
+	}
+
+	_ACCOUNT_FREE(msg);
+
+	ACCOUNT_DEBUG("END\n");
+}
+
+ACCOUNT_API int account_subscribe_create(account_subscribe_h* account_subscribe)
+{
+	if (!account_subscribe) {
+		ACCOUNT_ERROR("(%s)-(%d) account is NULL.\n", __FUNCTION__, __LINE__);
+		return ACCOUNT_ERROR_INVALID_PARAMETER;
+	}
+
+	account_subscribe_s *data = (account_subscribe_s*)calloc(1,sizeof(account_subscribe_s));
+
+	if(!data) {
+		ACCOUNT_FATAL("OUT OF MEMORY\n");
+		return ACCOUNT_ERROR_OUT_OF_MEMORY;
+	}
+
+	ACCOUNT_VERBOSE("create handle=%p\n", *data);
+
+	*account_subscribe = (account_subscribe_h)data;
+
+	return ACCOUNT_ERROR_NONE;
+}
+
+ACCOUNT_API int account_subscribe_notification(account_subscribe_h account_subscribe, account_event_cb cb_func, void* user_data)
+{
+	ACCOUNT_DEBUG("START\n");
+
+	ACCOUNT_RETURN_VAL((account_subscribe != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("(%s)-(%d) account subscribe handle is NULL.\n",	__FUNCTION__, __LINE__));
+
+	account_subscribe_s* tmp =(account_subscribe_s*)account_subscribe;
+
+	tmp->account_subscription_callback = cb_func;
+	tmp->user_data = user_data;
+
+	if (vconf_notify_key_changed(VCONFKEY_ACCOUNT_MSG_STR,
+				(vconf_callback_fn)_account_subscribe_vconf_callback,
+				(void*)tmp) != 0) {
+		ACCOUNT_FATAL("Vconf Subscription Failed !!!!!\n");
+		return ACCOUNT_ERROR_EVENT_SUBSCRIPTION_FAIL;
+	}
+
+	ACCOUNT_DEBUG("Vconf Subscription Success!!!!\n");
+	return ACCOUNT_ERROR_NONE;
+}
+
+ACCOUNT_API int account_unsubscribe_notification(account_subscribe_h account_subscribe)
+{
+	ACCOUNT_RETURN_VAL((account_subscribe != NULL), {}, ACCOUNT_ERROR_INVALID_PARAMETER, ("(%s)-(%d) account subscribe handle is NULL.\n",	__FUNCTION__, __LINE__));
+
+	account_subscribe_s* tmp =(account_subscribe_s*)account_subscribe;
+
+	_ACCOUNT_FREE(tmp);
+
+	if (vconf_ignore_key_changed(VCONFKEY_ACCOUNT_MSG_STR,
+	   (vconf_callback_fn)_account_subscribe_vconf_callback) != 0) {
+		ACCOUNT_FATAL("Vconf Subscription Failed !!!!!\n");
+		return ACCOUNT_ERROR_EVENT_SUBSCRIPTION_FAIL;
+	}
+
+	ACCOUNT_DEBUG("Vconf Unsubscription Success!!!!\n");
+	return ACCOUNT_ERROR_NONE;
+}
 

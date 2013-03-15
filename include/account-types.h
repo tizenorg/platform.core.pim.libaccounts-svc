@@ -42,33 +42,6 @@ extern "C"
  */
 
 /**
- * @brief	Enumerations for the result types of capability.
- */
-typedef enum
-{
-	ACCOUNT_CAPABILITY_NONE = 0,
-	ACCOUNT_CAPABILITY_CONTACT,
-	ACCOUNT_CAPABILITY_CALENDAR,
-	ACCOUNT_CAPABILITY_PHOTO,
-	ACCOUNT_CAPABILITY_VIDEO,
-	ACCOUNT_CAPABILITY_EMAIL,
-	ACCOUNT_CAPABILITY_STATUS_POST,
-	ACCOUNT_CAPABILITY_VOIP,
-	ACCOUNT_CAPABILITY_SAMSUNG_APPS,
-	ACCOUNT_CAPABILITY_TASK,
-	ACCOUNT_CAPABILITY_S_NOTE,
-	ACCOUNT_CAPABILITY_GALLERY,
-	ACCOUNT_CAPABILITY_MUSIC,
-	ACCOUNT_CAPABILITY_MEMO,
-	ACCOUNT_CAPABILITY_MESSAGE,
-	ACCOUNT_CAPABILITY_CHAT,
-	ACCOUNT_CAPABILITY_BOOKMARK,
-	ACCOUNT_CAPABILITY_MOBILE_TRACKER,
-	ACCOUNT_CAPABILITY_TIZEN_EMAIL,
-	ACCOUNT_CAPABILITY_TIZEN_MAX
-} account_capability_type_e;
-
-/**
  * @brief	Enumerations for the state of capability.
  */
 typedef enum
@@ -143,11 +116,14 @@ typedef struct account_type_s* account_type_h;
  */
 typedef struct label_s* label_h;
 
+typedef struct account_subscribe_s* account_subscribe_h;
+
 #define ACCOUNT_DATA_USERNAME					"http://tizen.org/account/data/username"
-#define ACCOUNT_DATA_ID							"http://tizen.org/account/data/account_id"
-#define ACCOUNT_DATA_SERVICE_PROVIDER 			"http://tizen.org/account/data/service_provider"
-#define ACCOUNT_OPERATION_SIGNIN				"http://tizen.org/account/operation/signin"
-#define ACCOUNT_OPERATION_VIEW					"http://tizen.org/account/operation/view"
+#define ACCOUNT_DATA_SERVICE_PROVIDER 				"http://tizen.org/account/data/service_provider"
+#define ACCOUNT_DATA_ID						"http://tizen.org/appcontrol/data/account/id"
+#define ACCOUNT_OPERATION_SIGNIN				"http://tizen.org/appcontrol/operation/account/add"
+#define ACCOUNT_OPERATION_VIEW				"http://tizen.org/appcontrol/operation/account/configure"
+
 #define ACCOUNT_SUPPORTS_CAPABILITY_CONTACT	"http://tizen.org/account/capability/contact"
 #define ACCOUNT_SUPPORTS_CAPABILITY_CALENDAR	"http://tizen.org/account/capability/calendar"
 #define ACCOUNT_SUPPORTS_CAPABILITY_PHOTO		"http://tizen.org/account/capability/photo"
