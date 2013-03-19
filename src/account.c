@@ -45,7 +45,7 @@
 #ifdef TARGET_ARM
 #define EMAIL_APPID "email-setting-efl"
 #else
-#define EMAIL_APPID "vxqbrefica"
+#define EMAIL_APPID "vxqbrefica.Email"
 #endif
 
 #endif
