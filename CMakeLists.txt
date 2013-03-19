@@ -6,7 +6,7 @@ SET(EXEC_PREFIX "\${prefix}")
 SET(LIBDIR "\${prefix}/lib")
 SET(INCLUDEDIR "\${prefix}/include ")
 SET(VERSION_MAJOR 0)
-SET(VERSION "${VERSION_MAJOR}.2.40")
+SET(VERSION "${VERSION_MAJOR}.2.41")
 
 SET(SRCS
 src/account.c
@@ -33,6 +33,16 @@ pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common v
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")
 ENDFOREACH(flag)
+
+FIND_PROGRAM(UNAME NAMES uname)
+EXEC_PROGRAM("${UNAME}" ARGS "-m" OUTPUT_VARIABLE "ARCH")
+IF ("${ARCH}" STREQUAL "arm")
+        ADD_DEFINITIONS("-DTARGET_ARM")
+        MESSAGE("[TARGET] Compile")
+ELSE  ("${ARCH}" STREQUAL "arm")
+        ADD_DEFINITIONS("-DTARGET_I386")
+        MESSAGE("[i386] Compile")
+ENDIF ("${ARCH}" STREQUAL "arm")
 
 SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${EXTRA_CFLAGS} -Wall")
 SET(CMAKE_LDFLAGS "-Wl,-zdefs")

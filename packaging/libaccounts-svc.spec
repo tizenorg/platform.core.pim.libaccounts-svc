@@ -1,7 +1,7 @@
 
 Name:       libaccounts-svc
 Summary:    Account DB library
-Version:    0.2.40
+Version:    0.2.41
 Release:    1
 Group:      TO_BE/FILLED_IN
 License:    Apache-2.0

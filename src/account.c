@@ -41,7 +41,13 @@
 #define EAS_CMDLINE "/usr/bin/eas-engine"
 #define EMAIL_SERVICE_CMDLINE "/usr/bin/email-service"
 #define ACTIVESYNC_APPID "activesync-ui"
+
+#ifdef TARGET_ARM
 #define EMAIL_APPID "email-setting-efl"
+#else
+#define EMAIL_APPID "vxqbrefica"
+#endif
+
 #endif
 
 static sqlite3* g_hAccountDB = NULL;
@@ -799,27 +805,6 @@ static int _account_execute_insert_query(account_s *account)
 	int				error_code = ACCOUNT_ERROR_NONE;
 	account_stmt 	hstmt = NULL;
 
-#ifdef ACCOUNT_VERIFY
-	char* 			appid = NULL;
-	appid = _account_get_current_appid();
-
-	if(appid) {
-		//replace appid to account->package_name
-		_ACCOUNT_FREE(account->package_name);
-		account->package_name = _account_get_text(appid);
-		_ACCOUNT_FREE(appid);
-	}else {
-		// API caller cannot be recognized
-		ACCOUNT_ERROR("APP ID not detectable!\n");
-		return ACCOUNT_ERROR_PERMISSION_DENIED;
-	}
-#else
-	if (!account->package_name) {
-		ACCOUNT_ERROR("Package name is mandetory field, it can not be NULL!!!!\n");
-		return ACCOUNT_ERROR_INVALID_PARAMETER;
-	}
-#endif
-
 	/* check whether app id exist in account type db */
 
 	if (!account->user_name && !account->display_name && !account->email_address) {
@@ -1521,6 +1506,27 @@ ACCOUNT_API int account_insert_to_db(account_h account, int *account_id)
 		return ACCOUNT_ERROR_DUPLICATED;
 	} else {
 		*account_id = _account_get_next_sequence(ACCOUNT_TABLE);
+
+#ifdef ACCOUNT_VERIFY
+		char*			appid = NULL;
+		appid = _account_get_current_appid();
+
+		if(appid) {
+			//replace appid to account->package_name
+			_ACCOUNT_FREE(data->package_name);
+			data->package_name = _account_get_text(appid);
+			_ACCOUNT_FREE(appid);
+		}else {
+			// API caller cannot be recognized
+			ACCOUNT_ERROR("APP ID not detectable!\n");
+			return ACCOUNT_ERROR_NOT_REGISTERED_PROVIDER;
+		}
+#else
+		if (!account->package_name) {
+			ACCOUNT_ERROR("Package name is mandetory field, it can not be NULL!!!!\n");
+			return ACCOUNT_ERROR_INVALID_PARAMETER;
+		}
+#endif
 
 		if(account_type_query_app_id_exist(data->package_name) != ACCOUNT_ERROR_NONE) {
 			ret_transaction = _account_end_transaction(FALSE);
@@ -2563,17 +2569,22 @@ static int _account_update_account(account_s *account, int account_id)
 	int				error_code = ACCOUNT_ERROR_NONE, count=0, ret_transaction = 0;
 	account_stmt 	hstmt = NULL;
 
-	_account_compare_old_record(account, account_id);
-
 #ifdef ACCOUNT_VERIFY
+	char* appid = NULL;
+
+	_ACCOUNT_FREE(account->package_name);
+	appid = _account_get_current_appid();
+	account->package_name = _account_get_text(appid);
+	_ACCOUNT_FREE(appid);
 
 	/* Check permission of requested appid */
 	if(!_account_verify_permission(account->package_name)) {
 		ACCOUNT_ERROR("No permission to update\n");
 		return ACCOUNT_ERROR_PERMISSION_DENIED;
 	}
-
 #endif
+
+	_account_compare_old_record(account, account_id);
 
 	if (!account->package_name) {
 		ACCOUNT_ERROR("Package name is mandetory field, it can not be NULL!!!!\n");

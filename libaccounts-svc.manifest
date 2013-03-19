@@ -13,6 +13,6 @@
 	</request>
 	<assign>
 		<filesystem path="/usr/lib/libaccounts-svc.so.0" label="_" />
-		<filesystem path="/usr/lib/libaccounts-svc.so.0.2.40" label="_" />
+		<filesystem path="/usr/lib/libaccounts-svc.so.0.2.41" label="_" />
 	</assign>
 </manifest>
