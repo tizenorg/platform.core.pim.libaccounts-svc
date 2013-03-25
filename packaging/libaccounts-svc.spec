@@ -36,7 +36,7 @@ Development files for %{name}
 
 %build
 export CFLAGS="${CFLAGS} -fPIC -fvisibility=hidden"
-cmake . -DCMAKE_INSTALL_PREFIX=/usr
+%cmake .
 
 make %{?jobs:-j%jobs}
 
@@ -44,7 +44,7 @@ make %{?jobs:-j%jobs}
 rm -rf %{buildroot}
 %make_install
 
-rm -rf %{buildroot}/usr/lib/accounts-svc
+rm -rf %{buildroot}%{_libdir}/accounts-svc
 
 %post
 /sbin/ldconfig
