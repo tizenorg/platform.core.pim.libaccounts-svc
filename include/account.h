@@ -191,6 +191,7 @@ ACCOUNT_API int account_insert_to_db(account_h account, int *account_db_id);
  * @retval	#ACCOUNT_ERROR_NONE Successful
  * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
  * @retval	#ACCOUNT_ERROR_DB_FAILED  Database operation failed
+ * @retval	#ACCOUNT_ERROR_PERMISSION_DENIED  the account owner is different from caller
  *
  * @pre	This function requires an open connection to account service by account_connect()
  *
@@ -1401,6 +1402,25 @@ ACCOUNT_API int account_type_get_multiple_account_support(account_type_h account
  * @see account_disconnect()
  */
 ACCOUNT_API int account_type_get_provider_feature_all(account_type_h account_type, provider_feature_cb cb_func, void* user_data);
+
+/**
+ * @brief	Gets the specific label information detail of account type.
+ *
+ * @param[in]	account_type The account type handle. It should be given by account_type_query_* functions or account_type_foreach_account_type_from_db
+ * @param[in]	locale Locale query. E.g) "en-gb"
+ * @param[out] label Label text will be given for the locale.
+ *
+ * @return	0 on success, otherwise a negative error value.
+ * @retval	#ACCOUNT_ERROR_NONE Successful
+ * @retval	#ACCOUNT_ERROR_RECORD_NOT_FOUND No label for the given locale
+ * @retval	#ACCOUNT_ERROR_INVALID_PARAMETER Invalid parameter
+ *
+ * @see account_type_foreach_account_type_from_db()
+ * @see account_type_query_by_app_id()
+ * @see account_type_set_label()
+ */
+
+ACCOUNT_API int account_type_get_label_by_locale(account_type_h account_type, const char* locale, char** label);
 
 /**
  * @brief	Gets the label information detail of account type.

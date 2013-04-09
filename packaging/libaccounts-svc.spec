@@ -1,7 +1,7 @@
 
 Name:       libaccounts-svc
 Summary:    Account DB library
-Version:    0.2.41
+Version:    0.2.51
 Release:    1
 Group:      TO_BE/FILLED_IN
 License:    Apache-2.0
@@ -36,7 +36,7 @@ Development files for %{name}
 
 %build
 export CFLAGS="${CFLAGS} -fPIC -fvisibility=hidden"
-%cmake .
+cmake . -DCMAKE_INSTALL_PREFIX=/usr
 
 make %{?jobs:-j%jobs}
 
@@ -44,7 +44,7 @@ make %{?jobs:-j%jobs}
 rm -rf %{buildroot}
 %make_install
 
-rm -rf %{buildroot}%{_libdir}/accounts-svc
+rm -rf %{buildroot}/usr/lib/accounts-svc
 
 %post
 /sbin/ldconfig
@@ -53,7 +53,7 @@ then
         mkdir -p /opt/dbspace
 fi
 if [ ! -f /opt/dbspace/.account.db ]
-rm -rf /opt/dbspace/.account.db*
+#rm -rf /opt/dbspace/.account.db*
 then
 	sqlite3 /opt/dbspace/.account.db 'PRAGMA journal_mode = PERSIST;
         CREATE TABLE if not exists label (AppId TEXT, Label TEXT, Locale TEXT);
