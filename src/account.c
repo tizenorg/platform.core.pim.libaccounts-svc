@@ -634,6 +634,7 @@ static int _account_glist_free(GList* list)
 
 static gboolean _account_check_duplicated(account_s *data)
 {
+#if 0
 	char query[ACCOUNT_SQL_LEN_MAX] = {0, };
 	int count = 0;
 
@@ -648,6 +649,7 @@ static gboolean _account_check_duplicated(account_s *data)
 			count, data->user_name, data->domain_name );
 		return TRUE;
 	}
+#endif
 
 	return FALSE;
 }
