@@ -1,0 +1,3 @@
+* Wed May 29 2013 Xavier Roche <xavrock.os@gmail.com> accepted/tizen/20130520.101203@2011f9c
+- Fix hardcoded library path for 64 bit compatibility
+
