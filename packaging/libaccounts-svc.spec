@@ -36,7 +36,7 @@ Development files for %{name}
 
 %build
 export CFLAGS="${CFLAGS} -fPIC -fvisibility=hidden"
-cmake . -DCMAKE_INSTALL_PREFIX=/usr
+%cmake .
 
 make %{?jobs:-j%jobs}
 
@@ -44,7 +44,7 @@ make %{?jobs:-j%jobs}
 rm -rf %{buildroot}
 %make_install
 
-rm -rf %{buildroot}/usr/lib/accounts-svc
+rm -rf %{buildroot}%{_libdir}/accounts-svc
 
 %post
 /sbin/ldconfig
@@ -82,7 +82,7 @@ chmod 755 /opt/usr/share/account
 vconftool set -t string db/account/msg '' -g 6514
 
 #smack labeling
-if [ -f /usr/lib/rpm-plugins/msm.so ]
+if [ -f %{_libdir}/rpm-plugins/msm.so ]
 then
 	chsmack -a 'libaccounts-svc::db' /opt/dbspace/.account.db-journal
 	chsmack -a 'libaccounts-svc::db' /opt/dbspace/.account.db
