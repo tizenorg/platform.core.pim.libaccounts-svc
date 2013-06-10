@@ -1,18 +1,5 @@
 <manifest>
-	<define>
-		<domain name="libaccounts-svc"/>
-		<provide>
-			<label name="libaccounts-svc::db"/>
-		</provide>
-        	<request>
-                	<smack request="libaccounts-svc::db" type="rw" />
-        	</request>
-	</define>
 	<request>
-		<domain name="libaccounts-svc"/>
+		<domain name="_"/>
 	</request>
-	<assign>
-		<filesystem path="/usr/lib/libaccounts-svc.so.0" label="_" />
-		<filesystem path="/usr/lib/libaccounts-svc.so.0.2.52" label="_" />
-	</assign>
 </manifest>
