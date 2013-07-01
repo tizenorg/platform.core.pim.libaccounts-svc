@@ -6,6 +6,7 @@ Release:    1
 Group:      TO_BE/FILLED_IN
 License:    Apache-2.0
 Source0:    libaccounts-svc-%{version}.tar.gz
+Source1001: 	libaccounts-svc.manifest
 
 BuildRequires:  cmake
 BuildRequires:  pkgconfig(glib-2.0)
@@ -33,6 +34,7 @@ Development files for %{name}
 
 %prep
 %setup -q
+cp %{SOURCE1001} .
 
 %build
 export CFLAGS="${CFLAGS} -fPIC -fvisibility=hidden"
@@ -85,12 +87,13 @@ vconftool set -t string db/account/msg '' -g 6514
 %postun -p /sbin/ldconfig
 
 %files
-%manifest libaccounts-svc.manifest
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so.*
 %{_bindir}/account-xml-verify
 
 %files devel
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_libdir}/*.so
 %{_libdir}/pkgconfig/accounts-svc.pc
