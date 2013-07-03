@@ -82,12 +82,6 @@ chmod 755 /opt/usr/share/account
 vconftool set -t string db/account/msg '' -g 6514
 
 #smack labeling
-if [ -f %{_libdir}/rpm-plugins/msm.so ]
-then
-	chsmack -a 'libaccounts-svc::db' /opt/dbspace/.account.db-journal
-	chsmack -a 'libaccounts-svc::db' /opt/dbspace/.account.db
-fi
-
 %postun -p /sbin/ldconfig
 
 %files
