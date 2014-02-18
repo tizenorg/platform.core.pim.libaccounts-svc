@@ -31,6 +31,7 @@ extern "C"
 
 #include <glib.h>
 #include <dlog.h>
+#include <tzplatform_config.h>
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -96,7 +97,7 @@ NULL after passing 	them to free: free(NULL) is safe (it does nothing).
 					ptr = NULL; \
 				}	\
 
-#define ACCOUNT_DB_NAME "/opt/dbspace/.account.db"
+#define ACCOUNT_DB_NAME tzplatform_mkpath(TZ_SYS_DB, ".account.db")
 #define ACCOUNT_TABLE "account"
 #define CAPABILITY_TABLE "capability"
 #define ACCOUNT_CUSTOM_TABLE "account_custom"

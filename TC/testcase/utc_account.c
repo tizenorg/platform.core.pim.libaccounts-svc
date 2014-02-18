@@ -18,6 +18,7 @@
 #include <account.h>
 #include <account-types.h>
 #include <account-error.h>
+#include <tzplatform_config.h>
 
 #define TEST_PACKAGE_NAME		"com.samsung.facebook"
 
@@ -257,11 +258,15 @@ static void utc_account_connect_positive(void)
 static void utc_account_connect_negative(void)
 {
 	const char *API_NAME = __FUNCTION__;
+	const char *ACCT_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account.db");
+	const char *ACCT_TEMP_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account-tmp.db");
+	const char *ACCT_JR_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account.db-journal");
+	const char *ACCT_TEMP_JR_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account-tmp.db-journal");
 	int ret = ACCOUNT_ERROR_NONE;
 
-	ret = rename("/opt/dbspace/.account.db", "/opt/dbspace/.account-tmp.db");
+	ret = rename(ACCT_PATH, ACCT_TEMP_PATH);
 
-	ret = rename("/opt/dbspace/.account.db-journal", "/opt/dbspace/.account-tmp.db-journal");
+	ret = rename(ACCT_JR_PATH, ACCT_TEMP_JR_PATH);
 
 	ret = account_connect();
 
@@ -271,8 +276,9 @@ static void utc_account_connect_negative(void)
 		dts_fail(API_NAME, "failed");
 	}
 
-	ret = rename("/opt/dbspace/.account-tmp.db", "/opt/dbspace/.account.db");
-	ret = rename("/opt/dbspace/.account-tmp.db-journal", "/opt/dbspace/.account.db-journal");
+	ret = rename(ACCT_TEMP_PATH, ACCT_PATH);
+
+	ret = rename(ACCT_TEMP_JR_PATH, ACCT_JR_PATH);
 
 	ret = account_disconnect();
 	if ( ret != ACCOUNT_ERROR_NONE) {
@@ -303,11 +309,16 @@ static void utc_account_destroy_positive(void)
 static void utc_account_destroy_negative(void)
 {
 	const char *API_NAME = __FUNCTION__;
+	const char *ACCT_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account.db");
+	const char *ACCT_TEMP_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account-tmp.db");
+	const char *ACCT_JR_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account.db-journal");
+	const char *ACCT_TEMP_JR_PATH = tzplatform_mkpath(TZ_SYS_DB, ".account-tmp.db-journal");
 	int ret = ACCOUNT_ERROR_NONE;
 
-	ret = rename("/opt/dbspace/.account.db", "/opt/dbspace/.account-tmp.db");
 
-	ret = rename("/opt/dbspace/.account.db-journal", "/opt/dbspace/.account-tmp.db-journal");
+	ret = rename(ACCT_PATH, ACCT_TEMP_PATH);
+
+	ret = rename(ACCT_JR_PATH, ACCT_TEMP_JR_PATH);
 
 	ret = account_disconnect();
 
@@ -317,8 +328,9 @@ static void utc_account_destroy_negative(void)
 		dts_fail(API_NAME, "failed");
 	}
 
-	ret = rename("/opt/dbspace/.account-tmp.db", "/opt/dbspace/.account.db");
-	ret = rename("/opt/dbspace/.account-tmp.db-journal", "/opt/dbspace/.account.db-journal");
+	ret = rename(ACCT_TEMP_PATH, ACCT_PATH);
+
+	ret = rename(ACCT_TEMP_JR_PATH, ACCT_JR_PATH);
 }
 
 static void utc_account_create_positive(void)

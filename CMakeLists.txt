@@ -27,7 +27,7 @@ src/account-xml-verify.c
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include)
 
 INCLUDE(FindPkgConfig)
-pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common vconf capi-appfw-application libxml-2.0 pkgmgr-info aul)
+pkg_check_modules(pkgs REQUIRED sqlite3 dlog db-util glib-2.0 capi-base-common vconf capi-appfw-application libxml-2.0 pkgmgr-info aul libtzplatform-config)
 
 FOREACH(flag ${pkgs_CFLAGS})
 	SET(EXTRA_CFLAGS "${EXTRA_CFLAGS} ${flag}")

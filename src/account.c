@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <account.h>
 #include <glib.h>
 #include <db-util.h>
@@ -35,9 +37,10 @@
 #include <pkgmgr-info.h>
 #include <aul.h>
 #include <unistd.h>
+#include <tzplatform_config.h>
 
-#define EAS_CMDLINE "/usr/bin/eas-engine"
-#define EMAIL_SERVICE_CMDLINE "/usr/bin/email-service"
+#define EAS_CMDLINE tzplatform_mkpath(TZ_SYS_BIN, "eas-engine")
+#define EMAIL_SERVICE_CMDLINE tzplatform_mkpath(TZ_SYS_BIN, "email-service")
 #define ACTIVESYNC_APPID "activesync-ui"
 
 static sqlite3* g_hAccountDB = NULL;
@@ -496,6 +499,12 @@ static int _account_db_close(void)
 static int _account_connect(void)
 {
 	int error_code = ACCOUNT_ERROR_NONE;
+	const char *ACCT_DIR_PATH = tzplatform_mkpath(TZ_USER_SHARE, "account");
+	pid_t pid;
+
+	error_code = mkdir(ACCT_DIR_PATH, 755);
+	pid = tzplatform_getgid(TZ_SYS_USER_GROUP);
+	error_code = chown(ACCT_DIR_PATH, -1, pid);
 
 	pthread_mutex_lock(&account_mutex);
 

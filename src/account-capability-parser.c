@@ -28,13 +28,14 @@
 #include <libxml/xmlmemory.h>
 #include <libxml/parser.h>
 #include <app.h>
+#include <tzplatform_config.h>
 
 #ifndef ACCOUNT_API
 #define ACCOUNT_API __attribute__ ((visibility("default")))
 #endif
 
-#define ACCOUNT_XML_DIR "/usr/share/account"
-#define ACCOUNT_XML_OPT_DIR "/opt/usr/share/account"
+#define ACCOUNT_XML_DIR 	tzplatform_mkpath(TZ_SYS_SHARE, "account")
+#define ACCOUNT_XML_OPT_DIR 	tzplatform_mkpath(TZ_USER_SHARE, "account")
 #define BUFSIZE 1024
 
 static void _account_parse_doc(xmlDocPtr doc, xmlNodePtr cur,
